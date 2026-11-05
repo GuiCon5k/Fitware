@@ -1,0 +1,24 @@
+{
+  "name": "fitware",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "test": "npm run test -w apps/api && npm run test -w apps/web",
+    "setup": "node scripts/setup.mjs",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,css,html,json}\" \"scripts/*.mjs\" \"*.{json,md,yaml}\"",
+    "restore": "npm run restore -w apps/api --",
+    "start": "npm run start -w apps/api"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.10"
+  },
+  "version": "3.0.0",
+  "description": "Gesti\u00f3n multi gimnasio con socios, equipo, consumibles, promociones y balances"
+}
