@@ -1,3 +1,4 @@
+import { PasswordInput } from "./password-input";
 import {
   useEffect,
   useRef,
@@ -832,26 +833,24 @@ export function Recovery({
           {!done &&
             (token ? (
               <>
-                <Field label="Nueva contraseña">
-                  <input
-                    type="password"
-                    name="password"
-                    minLength={10}
-                    maxLength={200}
-                    autoComplete="new-password"
-                    required
-                  />
-                </Field>
-                <Field label="Repetir contraseña">
-                  <input
-                    type="password"
-                    name="confirm"
-                    minLength={10}
-                    maxLength={200}
-                    autoComplete="new-password"
-                    required
-                  />
-                </Field>
+                <PasswordInput
+                  label="Nueva contraseña"
+
+                  name="password"
+                  minLength={10}
+                  maxLength={200}
+                  autoComplete="new-password"
+                  required
+                />
+                <PasswordInput
+                  label="Repetir contraseña"
+
+                  name="confirm"
+                  minLength={10}
+                  maxLength={200}
+                  autoComplete="new-password"
+                  required
+                />
               </>
             ) : (
               <Field label="Email de tu cuenta">

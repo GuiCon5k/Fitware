@@ -6,6 +6,7 @@ import { EditorModal } from "../src/editor.js";
 import { Cash } from "../src/cash.js";
 import { Reports } from "../src/reports.js";
 import { BillingPanel } from "../src/billing-panel.js";
+import { MemberProfile } from "../src/workspace-tools.js";
 import type { User, Plan, Member, Promotion, Billing } from "../src/types.js";
 const user: User = {
   id: "owner",
@@ -52,6 +53,35 @@ const props = {
   onClose: () => {},
   onSaved: async () => {},
 };
+test("los datos del socio se muestran como texto escapado, sin interpretar HTML", () => {
+  const member = {
+    ...members[0],
+    name: "<img src=x onerror=alert(1)>",
+    notes: "<script>alert(1)</script>",
+    email: "",
+    phone: "",
+    address: "",
+    emergency_name: "",
+    emergency_phone: "",
+  };
+  const html = renderToStaticMarkup(
+    <MemberProfile
+      member={member}
+      plans={[]}
+      payments={[]}
+      status="Sin cuota"
+      canEdit={false}
+      canPay={false}
+      canReadPayments={false}
+      onEdit={() => {}}
+      onRenew={() => {}}
+      onClose={() => {}}
+    />,
+  );
+  assert.match(html, /&lt;img/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.doesNotMatch(html, /<img src=x|<script>/);
+});
 test("crear 2x1 muestra dos socios y un selector único de actividad", () => {
   const html = renderToStaticMarkup(
     <EditorModal

@@ -36,7 +36,7 @@ for (const key of [
 const { render, screen, within, waitFor, cleanup, fireEvent, act } =
   await import("@testing-library/react");
 const { default: userEvent } = await import("@testing-library/user-event");
-const { App } = await import("../src/app.js");
+const { App, Auth } = await import("../src/app.js");
 const { ImportMembers, Recovery } = await import("../src/workspace-tools.js");
 const realFetch = globalThis.fetch;
 let db: Database,
@@ -161,6 +161,62 @@ afterEach(async () => {
   cleanup();
   mockImport = false;
   await new Promise((r) => setTimeout(r, 30));
+});
+test("registro compara contraseñas antes de enviar y permite mostrarlas sin borrar datos", async () => {
+  const user = userEvent.setup({ document: dom.document as any });
+  render(<Auth initialError="" onLogin={() => {}} />);
+  await user.click(
+    screen.getByRole("button", { name: "¿Tenés un gimnasio? Creá tu cuenta" }),
+  );
+  await user.type(
+    screen.getByLabelText("Tu nombre y apellido"),
+    "Guille prueba",
+  );
+  await user.type(
+    screen.getByLabelText("Nombre de tu organización"),
+    "Organización",
+  );
+  await user.type(
+    screen.getByLabelText("Nombre de tu primer gimnasio"),
+    "Gimnasio",
+  );
+  await user.type(
+    screen.getByLabelText("Email", { exact: true }),
+    "confirm-ui@test.com",
+  );
+  const password = screen.getByLabelText("Contraseña", {
+    exact: true,
+  }) as HTMLInputElement;
+  const confirm = screen.getByLabelText("Repetí la contraseña", {
+    exact: true,
+  }) as HTMLInputElement;
+  await user.type(password, "ClaveDePrueba2026!");
+  await user.type(confirm, "OtraClaveDePrueba!");
+  const count = requests.filter((p) => p.endsWith("/auth/register")).length;
+  await user.click(
+    screen.getByRole("button", { name: "Crear cuenta", exact: true }),
+  );
+  assert.match(screen.getByRole("alert").textContent || "", /no coinciden/);
+  assert.equal(
+    requests.filter((p) => p.endsWith("/auth/register")).length,
+    count,
+  );
+  assert.equal(password.value, "ClaveDePrueba2026!");
+  assert.equal(
+    (screen.getByLabelText("Tu nombre y apellido") as HTMLInputElement).value,
+    "Guille prueba",
+  );
+  assert.equal(password.type, "password");
+  await user.click(
+    screen.getByRole("button", { name: "Mostrar contraseña", exact: true }),
+  );
+  assert.equal(password.type, "text");
+  assert.equal(confirm.type, "password");
+  await user.click(
+    screen.getByRole("button", { name: "Ocultar contraseña", exact: true }),
+  );
+  assert.equal(password.type, "password");
+  assert.equal(password.value, "ClaveDePrueba2026!");
 });
 after(async () => {
   globalThis.fetch = realFetch;

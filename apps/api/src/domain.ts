@@ -10,7 +10,8 @@ export class HttpError extends Error {
     super(message);
   }
 }
-export const text = z.string().trim().min(1).max(180);
+import { plainString } from "./input-safety.js";
+export const text = plainString.pipe(z.string().min(1).max(180));
 export const method = z.enum(["cash", "transfer"]);
 export const orderSchema = z.object({
   member_id: text,

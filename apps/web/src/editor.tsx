@@ -1,3 +1,4 @@
+import { PasswordInput } from "./password-input";
 import {
   useEffect,
   useRef,
@@ -309,22 +310,27 @@ export function EditorModal({
     b.promotion_id,
     b.partner_id,
   ]);
-  const input = (
-    label: string,
-    key: string,
-    type = "text",
-    extra: any = {},
-  ) => (
-    <Field label={label}>
-      <input
+  const input = (label: string, key: string, type = "text", extra: any = {}) =>
+    type === "password" ? (
+      <PasswordInput
+        label={label}
         name={key}
-        type={type}
         value={b[key] ?? ""}
         onChange={(e) => update(key, e.target.value)}
+        maxLength={200}
         {...extra}
       />
-    </Field>
-  );
+    ) : (
+      <Field label={label}>
+        <input
+          name={key}
+          type={type}
+          value={b[key] ?? ""}
+          onChange={(e) => update(key, e.target.value)}
+          {...extra}
+        />
+      </Field>
+    );
   const select = (
     label: string,
     key: string,

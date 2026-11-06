@@ -9,6 +9,10 @@ export async function downloadApi(path: string, filename: string) {
       "X-Fitware-Client": "web",
       ...(gymId ? { "X-Gym-Id": gymId } : {}),
     },
+  }).catch(() => {
+    throw new Error(
+      "No pudimos conectar con el servidor. Revisá tu conexión e intentá nuevamente; los datos del formulario se conservan.",
+    );
   });
   if (!res.ok) {
     const data = await res
@@ -36,6 +40,10 @@ export async function api<T = unknown>(
       ...(gymId ? { "X-Gym-Id": gymId } : {}),
       ...options.headers,
     },
+  }).catch(() => {
+    throw new Error(
+      "No pudimos conectar con el servidor. Revisá tu conexión e intentá nuevamente; los datos del formulario se conservan.",
+    );
   });
   if (!res.ok) {
     const data = await res
@@ -67,7 +75,7 @@ export const localDay = () =>
 export function exportCSV(filename: string, rows: unknown[][]) {
   const escape = (v: unknown) =>
     '"' +
-    (/^[=+@\-]/.test(String(v)) ? "'" : "") +
+    (/^[\s\u0000-\u001f]*[=+@\-]/u.test(String(v)) ? "'" : "") +
     String(v ?? "").replace(/"/g, '""') +
     '"';
   const blob = new Blob(

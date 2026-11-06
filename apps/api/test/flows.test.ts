@@ -18,6 +18,7 @@ import { seed } from "../src/seed.js";
 import { createBackupService, restoreAccount } from "../src/backups.js";
 import { today, addDays, dateText } from "../src/dates.js";
 import { tokenHash } from "../src/security.js";
+import { normalizeInput } from "../src/input-safety.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve } from "node:path";
@@ -45,6 +46,8 @@ async function request(
   gymId = gym,
   mime = "application/json",
 ) {
+  if (path === "/auth/register" && body && typeof body === "object")
+    body = { ...body, confirm_password: (body as any).password };
   const response = await fetch(base + path, {
     method,
     headers: {
@@ -163,6 +166,116 @@ after(async () => {
   await new Promise<void>((r) => server.close(() => r()));
   await db.close();
   await rm(temp, { recursive: true, force: true });
+});
+test("normalización preserva contraseñas, acentos, texto literal y rechaza propiedades y controles peligrosos", () => {
+  const password = "  Clave exacta ñ  ";
+  const clean = normalizeInput({
+    name: "  Jose\u0301 O'Connor  ",
+    email: "  NOMBRE@CORREO.COM  ",
+    password,
+    notes: " <script>alert(1)</script>\nMenor < 5 ",
+  });
+  assert.equal(clean.name, "José O'Connor");
+  assert.equal(clean.email, "nombre@correo.com");
+  assert.equal(clean.password, password);
+  assert.equal(clean.notes, "<script>alert(1)</script>\nMenor < 5");
+  assert.throws(
+    () => normalizeInput(JSON.parse('{"__proto__":{"admin":true}}')),
+    /no permitida/,
+  );
+  assert.throws(() => normalizeInput({ name: "hola\u0000" }), /caracteres/);
+  assert.equal(({} as any).admin, undefined);
+});
+test("registro exige confirmación en el servidor, normaliza emails y nunca recorta contraseñas", async () => {
+  const body = {
+    name: "  Registro seguro  ",
+    business_name: "  Organización  ",
+    gym_name: "  Gimnasio  ",
+    email: "  CONFIRMACION@TEST.COM  ",
+    password: "  UnaClaveExacta2026!  ",
+  };
+  async function send(extra: any) {
+    const r = await fetch(base + "/auth/register", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-fitware-client": "web",
+      },
+      body: JSON.stringify({ ...body, ...extra }),
+    });
+    return { response: r, data: await r.json() };
+  }
+  const missing = await send({});
+  assert.equal(missing.response.status, 400);
+  assert.ok(missing.data.fields.confirm_password);
+  const mismatch = await send({ confirm_password: "UnaClaveDiferente!" });
+  assert.equal(mismatch.response.status, 400);
+  assert.match(mismatch.data.error, /no coinciden/);
+  assert.equal(
+    (await db.query("SELECT id FROM users WHERE email='confirmacion@test.com'"))
+      .rows.length,
+    0,
+  );
+  const valid = await send({ confirm_password: body.password });
+  assert.equal(valid.response.status, 201, JSON.stringify(valid.data));
+  assert.equal(valid.data.name, "Registro seguro");
+  assert.equal(valid.data.email, "confirmacion@test.com");
+  assert.equal(
+    (
+      await request(
+        "/auth/login",
+        "POST",
+        { email: " CONFIRMACION@test.com ", password: body.password },
+        "",
+      )
+    ).response.status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(
+        "/auth/login",
+        "POST",
+        { email: "confirmacion@test.com", password: body.password.trim() },
+        "",
+      )
+    ).response.status,
+    401,
+  );
+});
+test("API valida formatos y límites con mensajes en español, sin modificar registros inválidos", async () => {
+  const invalid = await request("/members", "POST", {
+    name: "  ",
+    document: "abc",
+    email: "correo malo",
+  });
+  assert.equal(invalid.response.status, 400);
+  assert.match(invalid.data.error, /Nombre|DNI/);
+  assert.ok(invalid.data.fields.document);
+  assert.ok(invalid.data.fields.email);
+  assert.doesNotMatch(invalid.data.error, /Invalid|expected/);
+  const bad = await request("/members", "POST", {
+    name: "Nombre\u0000",
+    document: "99887766",
+  });
+  assert.equal(bad.response.status, 400);
+  assert.equal(
+    (await db.query("SELECT id FROM members WHERE document='99887766'")).rows
+      .length,
+    0,
+  );
+  const injection = "O'Connor <script>alert('x')</script>";
+  const id = ok(
+    await request("/members", "POST", {
+      name: injection,
+      document: "99887765",
+      address: "  Calle José 123  ",
+    }),
+    201,
+  ).id;
+  const saved = ok(await request("/members")).find((m: any) => m.id === id);
+  assert.equal(saved.name, injection);
+  assert.equal(saved.address, "Calle José 123");
 });
 test("configuración: valores simples en cuentas nuevas, módulos restringidos en API y permisos", async () => {
   assert.deepEqual(

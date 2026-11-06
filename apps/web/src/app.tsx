@@ -1,3 +1,5 @@
+import { PasswordInput } from "./password-input";
+import { useFormGuidance } from "./form-guidance";
 import {
   useCallback,
   useEffect,
@@ -101,6 +103,7 @@ const roleNames = {
   trainer: "Entrenador",
 };
 export function App() {
+  useFormGuidance();
   const [user, setUser] = useState<User | null>(null),
     [checking, setChecking] = useState(true),
     [page, setPage] = useState<Page>("dashboard"),
@@ -1473,7 +1476,7 @@ export function App() {
     </div>
   );
 }
-function Auth({
+export function Auth({
   onLogin,
   initialError,
 }: {
@@ -1490,6 +1493,18 @@ function Auth({
     setError("");
     try {
       const data = Object.fromEntries(new FormData(e.currentTarget));
+      if (register && data.password !== data.confirm_password) {
+        setError(
+          "Las contraseñas no coinciden. Escribí la misma contraseña en ambos campos.",
+        );
+        e.currentTarget
+          .querySelector<HTMLInputElement>('[name="confirm_password"]')
+          ?.focus();
+        return;
+      }
+      for (const key of ["name", "business_name", "gym_name", "email"])
+        if (typeof data[key] === "string")
+          data[key] = (data[key] as string).trim();
       onLogin(
         await api<User>(register ? "/auth/register" : "/auth/login", {
           method: "POST",
@@ -1536,7 +1551,12 @@ function Auth({
             ? "Creá tu cuenta de dueño y tu primer gimnasio."
             : "Ingresá con tu cuenta para continuar."}
         </p>
-        <form onSubmit={submit}>
+        <form
+          onSubmit={submit}
+          onChange={() => {
+            if (error) setError("");
+          }}
+        >
           {register && (
             <>
               <Field label="Tu nombre y apellido">
@@ -1558,16 +1578,30 @@ function Auth({
           <Field label="Email">
             <input name="email" type="email" autoComplete="username" required />
           </Field>
-          <Field label="Contraseña">
-            <input
-              name="password"
-              type="password"
-              minLength={register ? 10 : 1}
+          <PasswordInput
+            label="Contraseña"
+            name="password"
+            minLength={register ? 10 : 1}
+            maxLength={200}
+            autoComplete={register ? "new-password" : "current-password"}
+            required
+            hint={
+              register
+                ? "Usá entre 10 y 200 caracteres. Podés mostrarla para revisarla."
+                : undefined
+            }
+          />
+          {register && (
+            <PasswordInput
+              label="Repetí la contraseña"
+              name="confirm_password"
+              minLength={10}
               maxLength={200}
-              autoComplete={register ? "new-password" : "current-password"}
+              autoComplete="new-password"
               required
+              hint="Escribí exactamente la misma contraseña."
             />
-          </Field>
+          )}
           {error && (
             <div className="error" role="alert">
               {error}

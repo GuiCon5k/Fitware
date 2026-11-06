@@ -36,6 +36,11 @@ import {
   renewalTemplate,
   voidMovement,
 } from "./member-flows.js";
+import {
+  normalizeInput,
+  InputError,
+  validationErrors,
+} from "./input-safety.js";
 import { memberSchema } from "./validators.js";
 type User = {
   id: string;
@@ -87,7 +92,7 @@ export function createApp(
   const backups = options.backups || createBackupService(db);
   const app = express();
   app.disable("x-powered-by");
-  if(process.env.RENDER)app.set("trust proxy",1);
+  if (process.env.RENDER) app.set("trust proxy", 1);
   app.use(helmet());
   app.use(express.json({ limit: "100kb" }));
   app.use("/api", (req, res, next) => {
@@ -104,6 +109,20 @@ export function createApp(
         return res.status(403).json({ error: "Falta encabezado de seguridad" });
     }
     next();
+  });
+  app.use("/api", (req, _res, next) => {
+    try {
+      if (req.path === "/billing/webhook") return next();
+      if (req.body && !Buffer.isBuffer(req.body))
+        req.body = normalizeInput(req.body);
+      Object.defineProperty(req, "query", {
+        value: normalizeInput(req.query),
+        configurable: true,
+      });
+      next();
+    } catch (e) {
+      next(e);
+    }
   });
   const sessionToken = (req: Request) =>
     req.headers.cookie
@@ -191,8 +210,14 @@ export function createApp(
         name: text,
         email: z.email(),
         password: z.string().min(10).max(200),
+        confirm_password: z.string().min(1).max(200),
         business_name: text,
         gym_name: text,
+      })
+      .refine((b) => b.password === b.confirm_password, {
+        path: ["confirm_password"],
+        message:
+          "Las contraseñas no coinciden. Escribí la misma contraseña en ambos campos.",
       })
       .parse(req.body);
     const user = await db.transaction(async (tx) => {
@@ -1445,13 +1470,20 @@ export function createApp(
   );
   app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
     if (error instanceof z.ZodError)
-      return res
-        .status(400)
-        .json({ error: error.issues.map((x) => x.message).join("; ") });
+      return res.status(400).json(validationErrors(error));
+    if (error instanceof InputError)
+      return res.status(400).json({
+        error: error.message,
+        fields: { [error.field]: error.message },
+      });
     if (error.code === "23505")
-      return res
-        .status(409)
-        .json({ error: "Ya existe un registro con esos datos" });
+      return res.status(409).json({
+        error: String(error.constraint).includes("users_email")
+          ? "Ese email ya tiene una cuenta. Ingresá o recuperá tu contraseña."
+          : String(error.constraint).includes("members_gym_document")
+            ? "Ya hay un socio con ese DNI en este gimnasio. Buscalo antes de crear otro."
+            : "Ya existe un registro con esos datos. Revisá el formulario.",
+      });
     if (error.type === "entity.too.large")
       return res
         .status(413)
@@ -1459,7 +1491,12 @@ export function createApp(
     if (error instanceof HttpError)
       return res.status(error.status).json({ error: error.message });
     if (error.type === "entity.parse.failed")
-      return res.status(400).json({ error: "JSON inválido" });
+      return res
+        .status(400)
+        .json({
+          error:
+            "No pudimos leer el formulario. Revisá los datos y volvé a intentarlo.",
+        });
     console.error(error);
     res.status(500).json({ error: "No se pudo completar la operación" });
   });

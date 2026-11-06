@@ -298,3 +298,11 @@ Servicio: https://fitware-3olk.onrender.com · repositorio: https://github.com/G
 - Si no se define `ADMIN_PASSWORD`, producción no crea las cuentas de ejemplo. El dueño se registra desde la interfaz con su propia contraseña.
 
 No se activan pagos reales ni SMTP hasta configurar y probar sus credenciales. El plan gratuito actual del servicio no constituye una configuración con persistencia garantizada. Elegir y aprobar los recursos persistentes antes de cargar datos reales. Cambiar los comandos de un servicio creado manualmente se realiza en Settings de Render.
+
+## Registro y validación de formularios
+
+El registro exige repetir la contraseña y comprueba la coincidencia tanto en React como en Express. Los campos de contraseña incluyen controles accesibles para mostrar/ocultar su contenido en registro, ingreso, cambio, recuperación y empleados. Las contraseñas no se recortan ni normalizan.
+
+La API normaliza espacios externos y Unicode de los textos de formularios JSON y parámetros de consulta, y convierte los emails a minúsculas. Rechaza caracteres de control, claves de prototipo y estructuras excesivas; los esquemas por operación verifican formatos, límites, números, fechas y opciones. La importación valida sus textos con los mismos esquemas de socios. El webhook de Mercado Pago conserva el contenido original para su validación específica. Los mensajes de validación se devuelven en español, con nombres de campo y un mapa `fields`.
+
+Los nombres y las observaciones conservan apóstrofes, acentos y texto literal: React los muestra escapados, no como HTML. SQL continúa usando parámetros y los CSV neutralizan prefijos de fórmula, incluidos los precedidos por espacios. Esto es validación y manejo contextual de entradas, no una garantía general de ausencia de vulnerabilidades ni una auditoría completa de seguridad.

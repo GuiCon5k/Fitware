@@ -37,6 +37,8 @@ async function request(
   cookie = ownerCookie,
   gym = gymId,
 ) {
+  if (path === "/auth/register" && body && typeof body === "object")
+    body = { ...body, confirm_password: (body as any).password };
   const response = await fetch(base + path, {
     method,
     headers: {
