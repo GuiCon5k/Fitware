@@ -15,6 +15,10 @@ export const permissionNames = [
   "expenses.write",
   "promos.manage",
   "movements.void",
+  "payments.reconcile",
+  "cash.count",
+  "access.checkin",
+  "access.manage",
 ] as const;
 export const presets = {
   receptionist: [
@@ -25,6 +29,7 @@ export const presets = {
     "plans.read",
     "products.read",
     "sales.write",
+    "access.checkin",
   ],
   trainer: ["members.read", "plans.read"],
 };

@@ -9,15 +9,21 @@ export const backupTables = [
   "accounts",
   "account_settings",
   "gyms",
+  "payment_methods",
   "users",
   "staff_gyms",
   "members",
+  "member_photos",
+  "access_credentials",
+  "checkins",
   "plans",
   "subscriptions",
   "member_activities",
   "promotions",
   "orders",
   "payments",
+  "pending_payments",
+  "cash_counts",
   "products",
   "sales",
   "inventory_movements",
@@ -32,6 +38,12 @@ export const backupTables = [
   "audit_logs",
 ] as const;
 const gymTables = new Set([
+  "payment_methods",
+  "member_photos",
+  "access_credentials",
+  "checkins",
+  "pending_payments",
+  "cash_counts",
   "members",
   "plans",
   "subscriptions",
@@ -81,7 +93,7 @@ async function snapshot(db: Database, accountId: string) {
     }
     return {
       format: "fitware-account-backup",
-      schema_version: 4,
+      schema_version: 5,
       account_id: accountId,
       created_at: new Date().toISOString(),
       tables,
@@ -188,12 +200,22 @@ export async function restoreAccount(db: Database, bytes: Buffer) {
   }
   if (
     data.format !== "fitware-account-backup" ||
-    data.schema_version !== 4 ||
+    ![4, 5].includes(data.schema_version) ||
     typeof data.account_id !== "string" ||
     !data.tables
   )
     throw new HttpError(400, "Formato de respaldo no compatible");
   const accountId = data.account_id;
+  if (data.schema_version === 4)
+    for (const t of [
+      "payment_methods",
+      "member_photos",
+      "access_credentials",
+      "checkins",
+      "pending_payments",
+      "cash_counts",
+    ])
+      data.tables[t] = [];
   for (const t of backupTables)
     if (!Array.isArray(data.tables[t]))
       throw new HttpError(400, "El respaldo está incompleto");

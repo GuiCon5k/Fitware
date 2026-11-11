@@ -111,17 +111,21 @@ export function PaymentTable({
       <table>
         <thead>
           <tr>
-            <th>SOCIO / PLAN</th>
             <th>FECHA</th>
+            <th>SOCIO</th>
+            <th>DNI</th>
+            <th>TELÉFONO</th>
+            <th>PASE</th>
             <th>PROMOCIÓN</th>
             <th>MEDIO</th>
-            <th>IMPORTE</th>
+            <th>PRECIO FINAL</th>
             {onVoid && <th>ACCIÓN</th>}
           </tr>
         </thead>
         <tbody>
           {payments.map((p) => (
             <tr key={p.id} className={p.voided_at ? "voided-row" : ""}>
+              <td>{shortDate(p.created_at)}</td>
               <td>
                 <div className="person">
                   <span className="member-avatar">
@@ -129,7 +133,7 @@ export function PaymentTable({
                   </span>
                   <div>
                     <strong>{p.member_name}</strong>
-                    <small>{p.plan_name}</small>
+
                     {p.voided_at && (
                       <small className="amount-red">
                         Anulado · {p.void_reason}
@@ -138,9 +142,15 @@ export function PaymentTable({
                   </div>
                 </div>
               </td>
-              <td>{shortDate(p.created_at)}</td>
+              <td>{p.member_document || "—"}</td>
+              <td>{p.member_phone || "—"}</td>
+              <td>{p.plan_name}</td>
               <td>{p.promotion_name || "—"}</td>
-              <td>{p.method === "cash" ? "Efectivo" : "Transferencia"}</td>
+              <td>
+                {p.method_name ||
+                  (p.method === "cash" ? "Efectivo" : "Transferencia")}
+                <small>{p.reference}</small>
+              </td>
               <td>
                 <strong>{money(p.amount_cents)}</strong>
                 {p.discount_cents > 0 && (

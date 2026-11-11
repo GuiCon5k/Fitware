@@ -185,6 +185,48 @@ export function Reports({
           <CashChart report={report} />
         </section>
       </div>
+      <section className="panel tools-panel">
+        <PanelHead
+          title="Uso real de las áreas"
+          subtitle={`${report?.charges || 0} cobros · ${report?.passes || 0} pases en el período`}
+        />
+        <div
+          className="bar-chart"
+          role="img"
+          aria-label="Ingresos registrados por área"
+        >
+          {report?.attendance?.length ? (
+            report.attendance.map((a) => (
+              <div className="chart-row" key={a.activity}>
+                <div>
+                  <span>{a.activity}</span>
+                  <b>
+                    {a.visits} ingresos · {a.unique_members} socios
+                  </b>
+                </div>
+                <div className="chart-track">
+                  <span
+                    style={{
+                      width: `${(a.visits / Math.max(1, ...report.attendance!.map((a) => a.visits))) * 100}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ))
+          ) : (
+            <p>
+              Registrá ingresos en Recepción para comparar el uso real de cada
+              área.
+            </p>
+          )}
+        </div>
+        <p className="fine-print">
+          Cuenta intentos permitidos registrados en recepción, con repeticiones
+          dentro de un minuto agrupadas. Un ingreso sin área elegida se muestra
+          como “Ingreso general”; no se atribuye a todas las actividades del
+          socio.
+        </p>
+      </section>
       <section className="panel report-table">
         <PanelHead
           title="Resumen detallado"
@@ -242,6 +284,48 @@ export function Reports({
           neta ni un saldo bancario.
         </p>
       </section>
+      <section className="panel tools-panel">
+        <PanelHead
+          title="Uso real de las áreas"
+          subtitle={`${report?.charges || 0} cobros · ${report?.passes || 0} pases en el período`}
+        />
+        <div
+          className="bar-chart"
+          role="img"
+          aria-label="Ingresos registrados por área"
+        >
+          {report?.attendance?.length ? (
+            report.attendance.map((a) => (
+              <div className="chart-row" key={a.activity}>
+                <div>
+                  <span>{a.activity}</span>
+                  <b>
+                    {a.visits} ingresos · {a.unique_members} socios
+                  </b>
+                </div>
+                <div className="chart-track">
+                  <span
+                    style={{
+                      width: `${(a.visits / Math.max(1, ...report.attendance!.map((a) => a.visits))) * 100}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ))
+          ) : (
+            <p>
+              Registrá ingresos en Recepción para comparar el uso real de cada
+              área.
+            </p>
+          )}
+        </div>
+        <p className="fine-print">
+          Cuenta intentos permitidos registrados en recepción, con repeticiones
+          dentro de un minuto agrupadas. Un ingreso sin área elegida se muestra
+          como “Ingreso general”; no se atribuye a todas las actividades del
+          socio.
+        </p>
+      </section>
       <section className="panel report-table">
         <PanelHead
           title="Detalle de movimientos"
@@ -275,7 +359,10 @@ export function Reports({
                     )}
                   </td>
                   <td>{m.type}</td>
-                  <td>{m.method === "cash" ? "Efectivo" : "Transferencia"}</td>
+                  <td>
+                    {m.method_name ||
+                      (m.method === "cash" ? "Efectivo" : "Transferencia")}
+                  </td>
                   <td
                     className={
                       m.type === "Egreso" ? "amount-red" : "amount-green"

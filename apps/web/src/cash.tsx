@@ -1,3 +1,4 @@
+import { CashCount } from "./gym-tools";
 import { useState } from "react";
 import {
   Search,
@@ -12,6 +13,7 @@ import { Stat, PanelHead } from "./components";
 import type { Report } from "./types";
 export function Cash({
   report,
+  canCount = false,
   onVoid,
   day,
   onDay,
@@ -20,6 +22,7 @@ export function Cash({
   onExpense,
 }: {
   report: Report | null;
+  canCount?: boolean;
   onVoid?: (m: Report["movements"][number]) => void;
   day: string;
   onDay: (d: string) => void;
@@ -53,7 +56,7 @@ export function Cash({
           shortDate(m.created_at),
           m.description,
           m.type,
-          m.method === "cash" ? "Efectivo" : "Transferencia",
+          m.method_name || (m.method === "cash" ? "Efectivo" : "Transferencia"),
           m.type === "Egreso" ? 0 : m.amount_cents / 100,
           m.type === "Egreso" ? m.amount_cents / 100 : 0,
         ]),
@@ -112,9 +115,9 @@ export function Cash({
           icon={<Wallet />}
         />
         <Stat
-          title="Flujo de transferencias"
+          title="Flujo electrónico"
           value={money(net("transfer"))}
-          detail="Ingresos menos egresos por transferencia"
+          detail="Transferencias, tarjetas y billeteras"
           icon={<Wallet />}
         />
       </div>
@@ -190,7 +193,10 @@ export function Cash({
                       {m.type}
                     </span>
                   </td>
-                  <td>{m.method === "cash" ? "Efectivo" : "Transferencia"}</td>
+                  <td>
+                    {m.method_name ||
+                      (m.method === "cash" ? "Efectivo" : "Transferencia")}
+                  </td>
                   <td className="amount-green">
                     {m.type === "Egreso" ? "—" : money(m.amount_cents)}
                   </td>
@@ -217,6 +223,11 @@ export function Cash({
           </p>
         )}
       </section>
+      <CashCount
+        day={day}
+        canCount={canCount}
+        revision={JSON.stringify(movements.map((m) => [m.id, m.voided_at]))}
+      />
       <p className="fine-print">
         Caja muestra las operaciones de un día y el flujo por medio de pago.
         Para comparar períodos, actividades o sedes, usá “Resumen y balances”.

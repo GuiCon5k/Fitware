@@ -166,7 +166,7 @@ export async function migrateV3(db: Database) {
   });
 }
 
-export async function migrate(db: Database) {
+async function migrateV4(db: Database) {
   await migrateV3(db);
   if (
     (await db.query("SELECT version FROM schema_versions WHERE version=4")).rows
@@ -191,6 +191,36 @@ export async function migrate(db: Database) {
       `CREATE TABLE password_resets(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),expires_at TIMESTAMPTZ NOT NULL,used_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
       `CREATE TABLE backup_runs(id TEXT PRIMARY KEY,account_id TEXT NOT NULL REFERENCES accounts(id),file_name TEXT NOT NULL,sha256 TEXT NOT NULL,size_bytes INTEGER NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
       `INSERT INTO schema_versions VALUES(4)`,
+    ])
+      await tx.query(sql);
+  });
+}
+
+export async function migrate(db: Database) {
+  await migrateV4(db);
+  if (
+    (await db.query("SELECT version FROM schema_versions WHERE version=5")).rows
+      .length
+  )
+    return;
+  await db.transaction(async (tx) => {
+    for (const sql of [
+      `CREATE TABLE payment_methods(id TEXT PRIMARY KEY,gym_id TEXT NOT NULL REFERENCES gyms(id),name TEXT NOT NULL,method TEXT NOT NULL CHECK(method IN ('cash','transfer')),active BOOLEAN NOT NULL DEFAULT true,UNIQUE(gym_id,name))`,
+      ...["payments", "sales", "expenses"].flatMap((t) => [
+        `ALTER TABLE ${t} ADD COLUMN method_name TEXT NOT NULL DEFAULT ''`,
+        `ALTER TABLE ${t} ADD COLUMN reference TEXT NOT NULL DEFAULT ''`,
+      ]),
+      `ALTER TABLE expenses ADD COLUMN request_key TEXT UNIQUE`,
+      `ALTER TABLE expenses ADD COLUMN fingerprint TEXT`,
+      `CREATE TABLE pending_payments(id TEXT PRIMARY KEY,gym_id TEXT NOT NULL REFERENCES gyms(id),member_id TEXT NOT NULL REFERENCES members(id),request_key TEXT UNIQUE NOT NULL,fingerprint TEXT NOT NULL,payload JSONB NOT NULL,amount_cents INTEGER NOT NULL,method_name TEXT NOT NULL,reference TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','rejected')),order_id TEXT REFERENCES orders(id),verification TEXT,provider_payment_id TEXT UNIQUE,reason TEXT NOT NULL DEFAULT '',created_by TEXT NOT NULL REFERENCES users(id),reviewed_by TEXT REFERENCES users(id),created_at TIMESTAMPTZ NOT NULL DEFAULT now(),reviewed_at TIMESTAMPTZ)`,
+      `CREATE TABLE member_photos(member_id TEXT PRIMARY KEY REFERENCES members(id),gym_id TEXT NOT NULL REFERENCES gyms(id),image_base64 TEXT NOT NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+      `CREATE TABLE access_credentials(member_id TEXT PRIMARY KEY REFERENCES members(id),gym_id TEXT NOT NULL REFERENCES gyms(id),token_hash TEXT UNIQUE NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+      `CREATE TABLE checkins(id TEXT PRIMARY KEY,gym_id TEXT NOT NULL REFERENCES gyms(id),member_id TEXT REFERENCES members(id),activity TEXT NOT NULL DEFAULT '',allowed BOOLEAN NOT NULL,reason TEXT NOT NULL,created_by TEXT NOT NULL REFERENCES users(id),request_key TEXT UNIQUE NOT NULL,fingerprint TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+      `CREATE TABLE cash_counts(id TEXT PRIMARY KEY,gym_id TEXT NOT NULL REFERENCES gyms(id),day DATE NOT NULL,opening_cents INTEGER NOT NULL,rows JSONB NOT NULL,movements_hash TEXT NOT NULL,reason TEXT NOT NULL DEFAULT '',created_by TEXT NOT NULL REFERENCES users(id),request_key TEXT UNIQUE NOT NULL,fingerprint TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
+      `CREATE INDEX subscriptions_member_period ON subscriptions(member_id,plan_id,ends_on) WHERE cancelled_at IS NULL`,
+      `CREATE INDEX checkins_gym_date ON checkins(gym_id,created_at DESC)`,
+      `CREATE INDEX pending_payments_gym_status ON pending_payments(gym_id,status,created_at DESC)`,
+      `INSERT INTO schema_versions VALUES(5)`,
     ])
       await tx.query(sql);
   });

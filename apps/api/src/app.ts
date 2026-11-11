@@ -41,6 +41,9 @@ import {
   InputError,
   validationErrors,
 } from "./input-safety.js";
+import { paymentFields, resolveMethod } from "./payment-methods.js";
+import { installGymOperations } from "./gym-operations.js";
+import { installAccess, photoParser } from "./access.js";
 import { memberSchema } from "./validators.js";
 type User = {
   id: string;
@@ -71,6 +74,7 @@ const planSchema = z.object({
   active: z.boolean().default(true),
 });
 const productSchema = z.object({
+  ...paymentFields,
   low_stock_threshold: z.number().int().min(0).max(100000000).default(5),
   stock: z.number().int().min(0).max(100000000).optional(),
   expected_stock: z.number().int().min(0).optional(),
@@ -94,6 +98,7 @@ export function createApp(
   app.disable("x-powered-by");
   if (process.env.RENDER) app.set("trust proxy", 1);
   app.use(helmet());
+  app.use("/api/members/:id/photo", photoParser);
   app.use(express.json({ limit: "100kb" }));
   app.use("/api", (req, res, next) => {
     res.set("Cache-Control", "no-store");
@@ -190,7 +195,14 @@ export function createApp(
     legacyHeaders: false,
     message: { error: "Demasiados intentos. Esperá 15 minutos." },
   });
-  app.get("/api/health", (_req, res) => res.json({ status: "ok", version: 3 }));
+  app.get("/api/health", async (_req, res) => {
+    try {
+      await db.query("SELECT 1");
+      res.json({ status: "ok", version: 4, release: "4.0.0" });
+    } catch {
+      res.status(503).json({ status: "unavailable" });
+    }
+  });
   app.post("/api/auth/login", loginLimiter, async (req, res) => {
     const b = z
       .object({ email: z.email(), password: z.string().min(1).max(200) })
@@ -505,6 +517,15 @@ export function createApp(
         );
       const deps: Record<string, string[]> = {
         "members.write": ["members.read"],
+        "payments.reconcile": [
+          "payments.read",
+          "payments.write",
+          "members.read",
+          "plans.read",
+        ],
+        "cash.count": ["reports.read"],
+        "access.checkin": ["members.read", "plans.read"],
+        "access.manage": ["members.read"],
         "payments.write": ["members.read", "plans.read"],
         "plans.manage": ["plans.read"],
         "products.manage": ["products.read"],
@@ -544,7 +565,11 @@ export function createApp(
   app.put("/api/staff/:id", owner, saveStaff);
   app.use("/api", async (req, _res, next) => {
     try {
-      const gymId = req.get("x-gym-id");
+      const gymId =
+        req.get("x-gym-id") ||
+        (/^\/member-photos\/[^/]+$/.test(req.path)
+          ? String(req.query.gym_id || "")
+          : "");
       if (!gymId) throw new HttpError(400, "Seleccioná un gimnasio");
       const g = (
         await db.query("SELECT id FROM gyms WHERE id=$1 AND account_id=$2", [
@@ -569,6 +594,8 @@ export function createApp(
       next(e);
     }
   });
+  installGymOperations(app, db, permit, owner);
+  installAccess(app, db, permit);
   app.get(
     "/api/members/import/template",
     permit("members.write"),
@@ -694,7 +721,7 @@ export function createApp(
     res.json(
       (
         await db.query(
-          `SELECT m.*,COALESCE((SELECT json_agg(json_build_object('id',s.id,'plan_id',p.id,'plan_name',p.name,'activity',p.activity,'starts_on',s.starts_on,'ends_on',s.ends_on)) FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.member_id=m.id AND s.cancelled_at IS NULL),'[]'::json) subscriptions,COALESCE((SELECT json_agg(plan_id) FROM member_activities a WHERE a.member_id=m.id),'[]'::json) plan_ids FROM members m WHERE gym_id=$1 AND NOT archived ORDER BY name`,
+          `SELECT m.*,(SELECT updated_at FROM member_photos mp WHERE mp.member_id=m.id) photo_updated_at,COALESCE((SELECT json_agg(json_build_object('id',s.id,'plan_id',p.id,'plan_name',p.name,'activity',p.activity,'starts_on',s.starts_on,'ends_on',s.ends_on)) FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.member_id=m.id AND s.cancelled_at IS NULL),'[]'::json) subscriptions,COALESCE((SELECT json_agg(plan_id) FROM member_activities a WHERE a.member_id=m.id),'[]'::json) plan_ids FROM members m WHERE gym_id=$1 AND NOT archived ORDER BY name`,
           [req.gymId],
         )
       ).rows,
@@ -705,6 +732,12 @@ export function createApp(
     const id = req.method === "POST" ? randomUUID() : req.params.id;
     await db.transaction(async (tx) => {
       await tx.query("SELECT id FROM gyms WHERE id=$1 FOR UPDATE", [req.gymId]);
+      const before = (
+        await tx.query(
+          "SELECT document FROM members WHERE id=$1 AND gym_id=$2",
+          [id, req.gymId],
+        )
+      ).rows[0];
       for (const pid of b.plan_ids)
         if (
           !(
@@ -738,6 +771,15 @@ export function createApp(
         )
       ).rows[0];
       if (!row) throw new HttpError(404, "Socio no encontrado");
+      if (before && before.document !== b.document)
+        await audit(
+          tx,
+          req.user.account_id,
+          req.user.id,
+          "member.document_changed",
+          { member_id: id, previous: before.document, current: b.document },
+          req.gymId,
+        );
       await tx.query("DELETE FROM member_activities WHERE member_id=$1", [id]);
       for (const pid of [...new Set(b.plan_ids)])
         await tx.query("INSERT INTO member_activities VALUES($1,$2)", [
@@ -939,16 +981,22 @@ export function createApp(
         ),
       ),
   );
-  app.get("/api/payments", permit("payments.read"), async (req, res) =>
+  app.get("/api/payments", permit("payments.read"), async (req, res) => {
+    const memberId = req.query.member_id
+      ? text.parse(req.query.member_id)
+      : null;
+    const limit = req.query.limit
+      ? z.coerce.number().int().min(1).max(2000).parse(req.query.limit)
+      : null;
     res.json(
       (
         await db.query(
-          `SELECT p.*,m.name member_name,COALESCE(p.plan_snapshot,pl.name) plan_name,u.name created_by_name,COALESCE(o.promotion_name,'') promotion_name FROM payments p JOIN members m ON m.id=p.member_id JOIN subscriptions s ON s.id=p.subscription_id JOIN plans pl ON pl.id=s.plan_id JOIN users u ON u.id=p.created_by LEFT JOIN orders o ON o.id=p.order_id WHERE p.gym_id=$1 ORDER BY p.created_at DESC`,
-          [req.gymId],
+          `SELECT p.*,m.name member_name,m.document member_document,m.phone member_phone,COALESCE(p.plan_snapshot,pl.name) plan_name,u.name created_by_name,COALESCE(o.promotion_name,'') promotion_name FROM payments p JOIN members m ON m.id=p.member_id JOIN subscriptions s ON s.id=p.subscription_id JOIN plans pl ON pl.id=s.plan_id JOIN users u ON u.id=p.created_by LEFT JOIN orders o ON o.id=p.order_id WHERE p.gym_id=$1 AND ($2::text IS NULL OR p.member_id=$2) ORDER BY p.created_at DESC,p.id DESC LIMIT $3`,
+          [req.gymId, memberId, limit],
         )
       ).rows,
-    ),
-  );
+    );
+  });
   app.get("/api/products", permit("products.read"), async (req, res) => {
     const rows = (
       await db.query(
@@ -1070,7 +1118,7 @@ export function createApp(
         );
       if (b.record_stock_expense && delta * b.cost_cents > 0)
         await tx.query(
-          "INSERT INTO expenses(id,gym_id,description,amount_cents,method,created_by,category) VALUES($1,$2,$3,$4,$5,$6,$7)",
+          "INSERT INTO expenses(id,gym_id,description,amount_cents,method,created_by,category,method_name,reference) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
           [
             randomUUID(),
             req.gymId,
@@ -1079,6 +1127,8 @@ export function createApp(
             b.method,
             req.user.id,
             "Stock",
+            (await resolveMethod(tx, req.gymId, b)).name,
+            b.reference,
           ],
         );
       if (b.request_key)
@@ -1103,6 +1153,7 @@ export function createApp(
           quantity: z.number().int().min(1).max(10000),
           unit_cost_cents: z.number().int().min(0).max(100000000),
           method,
+          ...paymentFields,
           record_expense: z.boolean().default(true),
           request_key: z.uuid(),
         })
@@ -1165,7 +1216,7 @@ export function createApp(
         );
         if (b.record_expense && b.unit_cost_cents > 0)
           await tx.query(
-            "INSERT INTO expenses(id,gym_id,description,amount_cents,method,created_by,category) VALUES($1,$2,$3,$4,$5,$6,$7)",
+            "INSERT INTO expenses(id,gym_id,description,amount_cents,method,created_by,category,method_name,reference) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
             [
               randomUUID(),
               req.gymId,
@@ -1174,6 +1225,8 @@ export function createApp(
               b.method,
               req.user.id,
               "Stock",
+              (await resolveMethod(tx, req.gymId, b)).name,
+              b.reference,
             ],
           );
       });
@@ -1186,6 +1239,7 @@ export function createApp(
         product_id: text,
         quantity: z.number().int().min(1).max(10000),
         method,
+        ...paymentFields,
         request_key: z.uuid(),
       })
       .parse(req.body);
@@ -1206,6 +1260,7 @@ export function createApp(
           throw new HttpError(409, "Referencia ya utilizada");
         return prior;
       }
+      const payMethod = await resolveMethod(tx, req.gymId, b);
       const p = (
         await tx.query(
           "SELECT * FROM products WHERE id=$1 AND gym_id=$2 AND active FOR UPDATE",
@@ -1229,7 +1284,7 @@ export function createApp(
       );
       return (
         await tx.query(
-          "INSERT INTO sales(id,gym_id,product_id,product_snapshot,category_snapshot,quantity,amount_cents,cost_cents,method,created_by,request_key,fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *",
+          "INSERT INTO sales(id,gym_id,product_id,product_snapshot,category_snapshot,quantity,amount_cents,cost_cents,method,created_by,request_key,fingerprint,method_name,reference) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *",
           [
             randomUUID(),
             req.gymId,
@@ -1243,6 +1298,8 @@ export function createApp(
             req.user.id,
             b.request_key,
             fingerprint(b),
+            payMethod.name,
+            payMethod.reference,
           ],
         )
       ).rows[0];
@@ -1283,27 +1340,53 @@ export function createApp(
         description: text,
         amount_cents: z.number().int().positive().max(1000000000),
         method,
+        ...paymentFields,
         category: text.default("General"),
+        request_key: z.uuid().optional(),
       })
       .parse(req.body);
-    res
-      .status(201)
-      .json(
-        (
-          await db.query(
-            "INSERT INTO expenses(id,gym_id,description,amount_cents,method,created_by,category) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *",
-            [
-              randomUUID(),
-              req.gymId,
-              b.description,
-              b.amount_cents,
-              b.method,
-              req.user.id,
-              b.category,
-            ],
+    const result = await db.transaction(async (tx) => {
+      await tx.query("SELECT id FROM gyms WHERE id=$1 FOR UPDATE", [req.gymId]);
+      if (b.request_key) {
+        const old = (
+          await tx.query("SELECT * FROM expenses WHERE request_key=$1", [
+            b.request_key,
+          ])
+        ).rows[0];
+        if (old) {
+          if (
+            old.gym_id !== req.gymId ||
+            old.fingerprint !== fingerprint(b) ||
+            old.voided_at
           )
-        ).rows[0],
-      );
+            throw new HttpError(
+              409,
+              "Referencia utilizada en otro egreso o ya anulada.",
+            );
+          return old;
+        }
+      }
+      const m = await resolveMethod(tx, req.gymId, b);
+      return (
+        await tx.query(
+          "INSERT INTO expenses(id,gym_id,description,amount_cents,method,created_by,category,method_name,reference,request_key,fingerprint) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *",
+          [
+            randomUUID(),
+            req.gymId,
+            b.description,
+            b.amount_cents,
+            b.method,
+            req.user.id,
+            b.category,
+            m.name,
+            m.reference,
+            b.request_key || null,
+            fingerprint(b),
+          ],
+        )
+      ).rows[0];
+    });
+    res.status(201).json(result);
   });
   app.get("/api/reports", permit("reports.read"), async (req, res) => {
     const start = isoDate.parse(req.query.from || today().slice(0, 7) + "-01"),
@@ -1342,6 +1425,12 @@ export function createApp(
       await db.query(
         `SELECT DISTINCT s.member_id,p.activity FROM subscriptions s JOIN members m ON m.id=s.member_id JOIN plans p ON p.id=s.plan_id WHERE s.gym_id=ANY($1::text[]) AND NOT m.archived AND s.cancelled_at IS NULL AND s.starts_on<=$2 AND s.ends_on>$2`,
         [gyms, end],
+      )
+    ).rows;
+    const attendance = (
+      await db.query(
+        `SELECT COALESCE(NULLIF(activity,''),'Ingreso general') activity,count(*)::integer visits,count(DISTINCT member_id)::integer unique_members FROM checkins WHERE gym_id=ANY($1::text[]) AND allowed AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date BETWEEN $2 AND $3 GROUP BY activity ORDER BY visits DESC`,
+        [gyms, start, end],
       )
     ).rows;
     const groups = new Map<string, Row>();
@@ -1421,6 +1510,11 @@ export function createApp(
       rows,
       movements,
       daily: [...daily.values()].sort((a, b) => a.day.localeCompare(b.day)),
+      attendance,
+      passes: payments.filter((p) => !p.voided_at).length,
+      charges: new Set(
+        payments.filter((p) => !p.voided_at).map((p) => p.order_id || p.id),
+      ).size,
       activity_definition:
         "Socios únicos con suscripción vigente al cierre del período; no son visitas ni asistencia.",
     });
@@ -1491,12 +1585,10 @@ export function createApp(
     if (error instanceof HttpError)
       return res.status(error.status).json({ error: error.message });
     if (error.type === "entity.parse.failed")
-      return res
-        .status(400)
-        .json({
-          error:
-            "No pudimos leer el formulario. Revisá los datos y volvé a intentarlo.",
-        });
+      return res.status(400).json({
+        error:
+          "No pudimos leer el formulario. Revisá los datos y volvé a intentarlo.",
+      });
     console.error(error);
     res.status(500).json({ error: "No se pudo completar la operación" });
   });

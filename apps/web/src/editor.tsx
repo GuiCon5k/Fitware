@@ -1,3 +1,4 @@
+import { MethodFields } from "./gym-tools";
 import { PasswordInput } from "./password-input";
 import {
   useEffect,
@@ -37,6 +38,10 @@ export type Editor = {
   item?: any;
 };
 export const permissionLabels: Record<string, string> = {
+  "payments.reconcile": "Confirmar acreditaciones pendientes",
+  "cash.count": "Guardar arqueos de caja",
+  "access.checkin": "Controlar y registrar ingresos",
+  "access.manage": "Crear y revocar credenciales QR",
   "movements.void": "Anular cobros, ventas y egresos",
   "members.read": "Consultar socios",
   "members.write": "Crear y editar socios",
@@ -60,6 +65,7 @@ const preset: Record<string, string[]> = {
     "plans.read",
     "products.read",
     "sales.write",
+    "access.checkin",
   ],
   trainer: ["members.read", "plans.read"],
 };
@@ -164,6 +170,7 @@ export function EditorModal({
   const update = (key: string, value: any) => {
     setB((previous: any) => {
       let next = { ...previous, [key]: value };
+      if (key === "method" && value === "cash") next.pending = false;
       if (editor.kind === "payment" && key === "promotion_id") {
         const selected = promotions.find((p) => p.id === value);
         next = {
@@ -227,6 +234,8 @@ export function EditorModal({
     member_id: b.member_id,
     plan_ids: b.plan_ids,
     method: b.method,
+    method_detail: b.method_detail || undefined,
+    reference: b.reference || "",
     discount_cents: Math.round(Number(b.discount || 0) * 100),
     ...(b.promotion_id ? { promotion_id: b.promotion_id } : {}),
     ...(b.partner_id ? { partner_id: b.partner_id } : {}),
@@ -306,6 +315,8 @@ export function EditorModal({
     b.member_id,
     JSON.stringify(b.plan_ids),
     b.method,
+    b.method_detail,
+    b.reference,
     b.discount,
     b.promotion_id,
     b.partner_id,
@@ -375,10 +386,7 @@ export function EditorModal({
       {label}
     </label>
   );
-  const methods = select("Medio de pago", "method", [
-    { value: "cash", label: "Efectivo" },
-    { value: "transfer", label: "Transferencia" },
-  ]);
+  const methods = <MethodFields value={b} onChange={update} />;
   async function save(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
@@ -419,7 +427,7 @@ export function EditorModal({
         case "payment":
           if (!quote)
             throw new Error("Revisá los datos para calcular el cobro");
-          path = "/payments";
+          path = b.pending ? "/pending-payments" : "/payments";
           body = { ...paymentBody(), ...confirmedQuote() };
           break;
         case "product":
@@ -443,6 +451,8 @@ export function EditorModal({
             quantity: Number(b.quantity),
             unit_cost_cents: Math.round(Number(b.unit_cost) * 100),
             method: b.method,
+            method_detail: b.method_detail || undefined,
+            reference: b.reference || "",
             record_expense: b.record_expense,
             request_key: requestKey,
           };
@@ -453,6 +463,8 @@ export function EditorModal({
             product_id: b.product_id,
             quantity: Number(b.quantity),
             method: b.method,
+            method_detail: b.method_detail || undefined,
+            reference: b.reference || "",
             request_key: requestKey,
           };
           break;
@@ -487,7 +499,11 @@ export function EditorModal({
           break;
         case "expense":
           path = "/expenses";
-          body = { ...b, amount_cents: Math.round(Number(b.amount) * 100) };
+          body = {
+            ...b,
+            request_key: requestKey,
+            amount_cents: Math.round(Number(b.amount) * 100),
+          };
           break;
         case "profile":
           path = "/profile";
@@ -505,7 +521,9 @@ export function EditorModal({
       });
       await onSaved(
         editor.kind === "payment"
-          ? "Cobro registrado y suscripciones renovadas"
+          ? b.pending
+            ? "Pago informado. Quedó pendiente de acreditación; todavía no habilita el pase."
+            : "Cobro registrado y suscripciones renovadas"
           : editor.kind === "member"
             ? firstPayment
               ? "Socio creado y primer cobro registrado"
@@ -746,6 +764,21 @@ export function EditorModal({
               step: 0.01,
             })}
           {methods}
+          {b.method === "transfer" && (
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={!!b.pending}
+                onChange={(e) => update("pending", e.target.checked)}
+              />
+              Dejar pendiente hasta verificar la acreditación
+            </label>
+          )}
+          <p className="fine-print">
+            {b.method === "transfer" && b.pending
+              ? "No se habilitarán actividades ni se sumará el importe a caja hasta confirmar la recepción del dinero."
+              : "Al guardar confirmás que el dinero ya fue recibido. Para una transferencia sin verificar, usá la opción de pendiente."}
+          </p>
           <div className="quote-box">
             {quoteBusy ? (
               <p>Calculando total…</p>
@@ -1212,7 +1245,9 @@ export function EditorModal({
                 : firstPayment
                   ? "Crear socio y confirmar cobro"
                   : editor.kind === "payment"
-                    ? "Confirmar cobro"
+                    ? b.pending
+                      ? "Informar pago pendiente"
+                      : "Confirmar cobro"
                     : editor.kind === "sale"
                       ? "Confirmar venta"
                       : "Guardar"}

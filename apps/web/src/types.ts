@@ -30,6 +30,7 @@ export type Subscription = {
   ends_on: string;
 };
 export type Member = {
+  photo_updated_at?: string | null;
   id: string;
   name: string;
   document: string;
@@ -52,6 +53,10 @@ export type Plan = {
   active: boolean;
 };
 export type Payment = {
+  member_document?: string;
+  member_phone?: string;
+  method_name?: string;
+  reference?: string;
   member_id?: string;
   voided_at?: string;
   void_reason?: string;
@@ -121,6 +126,9 @@ export type ReportRow = {
   active_members: number;
 };
 export type Report = {
+  passes?: number;
+  charges?: number;
+  attendance?: { activity: string; visits: number; unique_members: number }[];
   from: string;
   to: string;
   income_cents: number;
@@ -133,6 +141,8 @@ export type Report = {
     type: string;
     description: string;
     amount_cents: number;
+    method_name?: string;
+    reference?: string;
     method: "cash" | "transfer";
     created_at: string;
     gym_id?: string;

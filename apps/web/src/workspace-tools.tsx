@@ -1,3 +1,4 @@
+import { MemberAccessTools } from "./gym-tools";
 import { PasswordInput } from "./password-input";
 import {
   useEffect,
@@ -215,9 +216,11 @@ export function GlobalSearch({
   );
 }
 export function MemberProfile({
+  gymId = "",
+  canManageAccess = false,
   member: m,
   plans,
-  payments,
+  payments: initialPayments,
   status,
   canEdit,
   canPay,
@@ -227,6 +230,8 @@ export function MemberProfile({
   onClose,
   onArchive,
 }: {
+  gymId?: string;
+  canManageAccess?: boolean;
   member: Member;
   plans: Plan[];
   payments: Payment[];
@@ -239,6 +244,22 @@ export function MemberProfile({
   onClose: () => void;
   onArchive?: () => void;
 }) {
+  const [payments, setPayments] = useState(initialPayments),
+    [paymentError, setPaymentError] = useState("");
+  useEffect(() => {
+    if (!canReadPayments || !gymId) return;
+    let ignore = false;
+    api<Payment[]>(`/payments?member_id=${encodeURIComponent(m.id)}`)
+      .then((r) => {
+        if (!ignore) setPayments(r);
+      })
+      .catch((e) => {
+        if (!ignore) setPaymentError(e.message);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [m.id, gymId, canReadPayments]);
   const day = localDay();
   const latest = payments
     .filter((p) => p.member_id === m.id && !p.voided_at)
@@ -260,6 +281,19 @@ export function MemberProfile({
   const ends = [...byPlan.values()].filter((d) => d >= day).sort()[0];
   return (
     <Dialog title={m.name} onClose={onClose}>
+      {gymId && (
+        <MemberAccessTools
+          member={m}
+          gymId={gymId}
+          canEdit={canEdit}
+          canManage={canManageAccess}
+        />
+      )}
+      {paymentError && (
+        <p className="error" role="alert">
+          No se pudo actualizar el historial: {paymentError}
+        </p>
+      )}
       <div className="profile-summary">
         <span className={"badge " + (status === "Activo" ? "green" : "amber")}>
           {status}
@@ -285,6 +319,9 @@ export function MemberProfile({
                 ? money(lastAmount) + " · " + shortDate(latest.created_at)
                 : "Sin pagos registrados"}
             </strong>
+            {latest?.promotion_name && (
+              <small>Promoción: {latest.promotion_name}</small>
+            )}
             {latest?.order_id && (
               <small>Importe correspondiente a este socio.</small>
             )}
@@ -294,7 +331,7 @@ export function MemberProfile({
       <div className="form-actions">
         {canEdit && (
           <button className="secondary" onClick={onEdit}>
-            Editar datos
+            Editar datos / DNI
           </button>
         )}
         {canPay && (

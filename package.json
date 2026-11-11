@@ -19,6 +19,6 @@
   "devDependencies": {
     "prettier": "^3.9.10"
   },
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "Gesti\u00f3n multi gimnasio con socios, equipo, consumibles, promociones y balances"
 }

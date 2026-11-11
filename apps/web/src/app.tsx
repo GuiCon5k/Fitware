@@ -1,3 +1,10 @@
+import { memberStatusFor } from "./member-status";
+import {
+  AccessDesk,
+  PaymentHistory,
+  Reconciliation,
+  MethodSettings,
+} from "./gym-tools";
 import { PasswordInput } from "./password-input";
 import { useFormGuidance } from "./form-guidance";
 import {
@@ -69,6 +76,7 @@ import {
   Recovery,
 } from "./workspace-tools";
 type Page =
+  | "access"
   | "dashboard"
   | "members"
   | "plans"
@@ -83,6 +91,7 @@ type Page =
   | "billing"
   | "settings";
 const titles: Record<Page, string> = {
+  access: "Control de ingreso",
   dashboard: "Tu gimnasio, al día.",
   members: "Socios",
   plans: "Planes y actividades",
@@ -112,6 +121,7 @@ export function App() {
     [members, setMembers] = useState<Member[]>([]),
     [plans, setPlans] = useState<Plan[]>([]),
     [payments, setPayments] = useState<Payment[]>([]),
+    [dataRevision, setDataRevision] = useState(0),
     [products, setProducts] = useState<Product[]>([]),
     [promotions, setPromotions] = useState<Promotion[]>([]),
     [staff, setStaff] = useState<Staff[]>([]),
@@ -212,7 +222,7 @@ export function App() {
       const [m, p, pa, pr, pro, d] = await Promise.all([
         allowed("members.read") ? api<Member[]>("/members") : [],
         allowed("plans.read") ? api<Plan[]>("/plans") : [],
-        allowed("payments.read") ? api<Payment[]>("/payments") : [],
+        allowed("payments.read") ? api<Payment[]>("/payments?limit=100") : [],
         modules.products && allowed("products.read")
           ? api<Product[]>("/products")
           : [],
@@ -225,6 +235,7 @@ export function App() {
       setMembers(m);
       setPlans(p);
       setPayments(pa);
+      setDataRevision((r) => r + 1);
       setProducts(pr);
       setPromotions(pro);
       setDashboard(d);
@@ -362,14 +373,8 @@ export function App() {
   const day = dashboard?.day || localDay();
   const activeSubs = (m: Member) =>
     m.subscriptions.filter((s) => s.starts_on <= day && s.ends_on > day);
-  const memberStatus = (m: Member) =>
-    activeSubs(m).length
-      ? "Activo"
-      : m.subscriptions.some((s) => s.starts_on > day)
-        ? "Programado"
-        : m.subscriptions.length
-          ? "Vencido"
-          : "Sin cuota";
+  const memberStatus = (m: Member, area = "all") =>
+    memberStatusFor(m, day, area);
   const expiring = dashboard?.upcoming || [];
   if (checking)
     return (
@@ -404,6 +409,12 @@ export function App() {
     );
   const nav = [
     {
+      id: "access",
+      icon: ShieldCheck,
+      label: "Ingresos",
+      show: allowed("access.checkin"),
+    },
+    {
       id: "dashboard",
       icon: LayoutDashboard,
       label: "Resumen",
@@ -437,7 +448,7 @@ export function App() {
       id: "promotions",
       icon: Tags,
       label: "Promociones",
-      show: false,
+      show: !!modules?.promotions && allowed("plans.read"),
     },
     {
       id: "cash",
@@ -464,14 +475,15 @@ export function App() {
   ];
   const filtered = members.filter(
     (m) =>
-      `${m.name} ${m.document} ${m.email}`
+      `${m.name} ${m.document} ${m.email} ${m.phone}`
         .toLowerCase()
         .includes(search.toLowerCase()) &&
-      (status === "all" || memberStatus(m) === status) &&
+      (status === "all" || memberStatus(m, activity) === status) &&
       (activity === "all" ||
         m.plan_ids.some(
           (id) => plans.find((p) => p.id === id)?.activity === activity,
-        )),
+        ) ||
+        m.subscriptions.some((s) => s.activity === activity)),
   );
   const actions: Partial<
     Record<Page, { label: string; kind: Editor["kind"]; show: boolean }>
@@ -923,12 +935,12 @@ export function App() {
                           <span
                             className={
                               "badge " +
-                              (memberStatus(m) === "Activo"
+                              (memberStatus(m, activity) === "Activo"
                                 ? "green"
                                 : "neutral")
                             }
                           >
-                            {memberStatus(m)}
+                            {memberStatus(m, activity)}
                           </span>
                         </td>
                         <td>
@@ -1004,48 +1016,25 @@ export function App() {
               )}
             </div>
           )}
-          {page === "payments" && (
-            <section className="panel">
-              <div className="toolbar">
-                <div>
-                  <h2>Historial de cuotas</h2>
-                  <small>
-                    En promociones, cada fila es la parte del cobro de un socio
-                    y plan.
-                  </small>
-                </div>
-                {allowed("payments.read") && (
-                  <button
-                    className="secondary"
-                    onClick={() =>
-                      exportCSV("FITWare-cuotas.csv", [
-                        [
-                          "Fecha",
-                          "Socio",
-                          "Plan",
-                          "Promoción",
-                          "Importe ARS",
-                          "Orden",
-                        ],
-                        ...payments
-                          .filter((p) => !p.voided_at)
-                          .map((p) => [
-                            shortDate(p.created_at),
-                            p.member_name,
-                            p.plan_name,
-                            p.promotion_name,
-                            p.amount_cents / 100,
-                            p.order_id,
-                          ]),
-                      ])
-                    }
-                  >
-                    <Download size={15} />
-                    Exportar CSV
-                  </button>
-                )}
-              </div>
-              <PaymentTable
+          {page === "access" && allowed("access.checkin") && (
+            <AccessDesk
+              key={gymId}
+              members={members}
+              plans={plans}
+              gymId={gymId}
+            />
+          )}
+          {page === "payments" && allowed("payments.read") && (
+            <>
+              <Reconciliation
+                key={"pending-" + gymId}
+                user={user}
+                onChanged={load}
+                revision={dataRevision}
+              />
+              <PaymentHistory
+                key={"history-" + gymId}
+                revision={dataRevision}
                 payments={payments}
                 onVoid={
                   allowed("movements.void")
@@ -1058,7 +1047,8 @@ export function App() {
                     : undefined
                 }
               />
-            </section>
+              {owner && <MethodSettings key={gymId} />}
+            </>
           )}
           {page === "products" && modules?.products && (
             <section className="panel">
@@ -1228,6 +1218,7 @@ export function App() {
           )}
           {page === "cash" && allowed("reports.read") && (
             <Cash
+              canCount={allowed("cash.count")}
               report={report}
               day={cashDay}
               onDay={setCashDay}
@@ -1443,6 +1434,8 @@ export function App() {
         <MemberProfile
           key={detail.id}
           member={detail}
+          gymId={gymId}
+          canManageAccess={allowed("access.manage")}
           plans={plans}
           payments={payments}
           status={memberStatus(detail)}

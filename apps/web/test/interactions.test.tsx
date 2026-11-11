@@ -499,3 +499,68 @@ test("un entrenador ve únicamente las funciones autorizadas y puede consultar l
     cookie = ownerCookie;
   }
 });
+test("recepción y conciliación: pendiente no activa, revisión habilita y el ingreso se registra por área", async () => {
+  const { Reconciliation, AccessDesk } = await import("../src/gym-tools.js");
+  const { setGym } = await import("../src/api.js");
+  setGym(gym);
+  const plans = await req("/plans"),
+    plan = plans[0];
+  const member = await req("/members", "POST", {
+    name: "Socio acreditación",
+    document: "99887766",
+    plan_ids: [plan.id],
+  });
+  await req("/pending-payments", "POST", {
+    member_id: member.id,
+    plan_ids: [plan.id],
+    method: "transfer",
+    request_key: crypto.randomUUID(),
+    reference: "Op 777",
+  });
+  const owner = await req("/auth/me");
+  const user = userEvent.setup({ document: dom.document as any });
+  render(<Reconciliation user={owner} onChanged={async () => {}} />);
+  await screen.findByText("Socio acreditación");
+  assert.equal(
+    (await req("/members")).find((m: any) => m.id === member.id).subscriptions
+      .length,
+    0,
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Revisar", exact: true }),
+  );
+  const confirm = await screen.findByRole("button", {
+    name: "Confirmar manualmente",
+  });
+  await user.type(
+    screen.getByLabelText("Constancia de la revisión"),
+    "Acreditado, operación 777",
+  );
+  await waitFor(() =>
+    assert.equal((confirm as HTMLButtonElement).disabled, false),
+  );
+  await user.click(confirm);
+  await screen.findByText("Cobro confirmado y pases habilitados.");
+  assert.equal(
+    (await req("/members")).find((m: any) => m.id === member.id).subscriptions
+      .length,
+    1,
+  );
+  cleanup();
+  render(
+    <AccessDesk members={await req("/members")} plans={plans} gymId={gym} />,
+  );
+  await user.type(screen.getByLabelText("DNI o credencial QR"), "99887766");
+  await user.click(screen.getByRole("button", { name: "Buscar", exact: true }));
+  await screen.findByText("Pase vigente");
+  await user.click(
+    screen.getByRole("button", { name: "Registrar ingreso", exact: true }),
+  );
+  await screen.findByText("Ingreso registrado.");
+  await screen.findByText("Permitido", { exact: true });
+  assert.equal(
+    (await req("/access/checkins")).find((c: any) => c.document === "99887766")
+      .allowed,
+    true,
+  );
+});

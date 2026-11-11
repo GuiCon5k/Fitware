@@ -13,7 +13,9 @@ export class HttpError extends Error {
 import { plainString } from "./input-safety.js";
 export const text = plainString.pipe(z.string().min(1).max(180));
 export const method = z.enum(["cash", "transfer"]);
+import { paymentFields, resolveMethod } from "./payment-methods.js";
 export const orderSchema = z.object({
+  ...paymentFields,
   member_id: text,
   plan_ids: z
     .array(text)
@@ -143,7 +145,9 @@ export async function quote(
       if (
         promotion.kind === "combo" &&
         (b.plan_ids.length < 2 ||
-          new Set(lines.map((l) => l.plan.activity)).size !== lines.length)
+          new Set(
+            lines.map((l) => l.plan.activity.trim().toLocaleLowerCase("es")),
+          ).size !== lines.length)
       )
         throw new HttpError(
           400,
@@ -226,6 +230,7 @@ export async function charge(
   userId: string,
   b: OrderInput,
   canDiscount: boolean,
+  pendingReview = false,
 ) {
   await tx.query("SELECT id FROM gyms WHERE id=$1 FOR UPDATE", [gymId]);
   const existing = (
@@ -242,6 +247,19 @@ export async function charge(
       );
     return existing;
   }
+  if (
+    !pendingReview &&
+    (
+      await tx.query("SELECT id FROM pending_payments WHERE request_key=$1", [
+        b.request_key,
+      ])
+    ).rows.length
+  )
+    throw new HttpError(
+      409,
+      "Este pago está en acreditaciones pendientes. Revisalo desde esa bandeja para evitar duplicarlo.",
+    );
+  const payMethod = await resolveMethod(tx, gymId, b);
   const calculated = await quote(tx, gymId, b, canDiscount);
   if (
     b.expected_total_cents !== undefined &&
@@ -316,7 +334,7 @@ export async function charge(
       [l.member_id, plan.id],
     );
     await tx.query(
-      "INSERT INTO payments(id,member_id,subscription_id,amount_cents,discount_cents,method,created_by,request_key,gym_id,order_id,activity_snapshot,plan_snapshot) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+      "INSERT INTO payments(id,member_id,subscription_id,amount_cents,discount_cents,method,created_by,request_key,gym_id,order_id,activity_snapshot,plan_snapshot,method_name,reference) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
       [
         randomUUID(),
         l.member_id,
@@ -330,6 +348,8 @@ export async function charge(
         orderId,
         plan.activity,
         plan.name,
+        payMethod.name,
+        payMethod.reference,
       ],
     );
   }

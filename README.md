@@ -15,7 +15,7 @@ Aplicación local de gestión para organizaciones con uno o varios gimnasios. Re
 - **Recuperar contraseña** con enlace de un uso por 30 minutos y cierre de las sesiones previas. Funciona con buzón local o remitente SMTP configurado; no se enviaron emails reales en esta entrega.
 - **Respaldos automáticos** cada 24 horas mientras corre el servidor, con descarga para el dueño, comprobación de integridad y comando de restauración en una base nueva.
 
-Se mantienen las promociones específicas 2x1/combo, el stock contado con historial, las pantallas separadas de caja y balances y la suscripción de USD 15 convertida a ARS. El alias informado es **Guicon** y el CVU **0000003100084706675067**. La conexión comercial real de Mercado Pago sigue pendiente de credenciales y despliegue HTTPS autorizado.
+Se mantienen las promociones específicas 2x1/combo, el stock contado con historial, las pantallas separadas de caja y balances y la suscripción de USD 15 convertida a ARS. El alias informado es **el alias configurado en el módulo de suscripción** y el CVU **[configurado en el módulo de suscripción]**. La suscripción de FITWare sigue pendiente de credenciales comerciales. La web ya está publicada con HTTPS; los cobros del gimnasio usan una conexión independiente.
 
 ### Actualizar desde v2 o v2.1
 
@@ -139,11 +139,11 @@ La fuente puede tener fecha del último día hábil: se acepta una antigüedad m
 
 ### Destino informado
 
-| Dato            | Valor                  |
-| --------------- | ---------------------- |
-| Alias           | Guicon                 |
-| CVU             | 0000003100084706675067 |
-| Moneda de cobro | ARS                    |
+| Dato            | Valor                                     |
+| --------------- | ----------------------------------------- |
+| Alias           | Configurado en el módulo de suscripción   |
+| CVU             | [configurado en el módulo de suscripción] |
+| Moneda de cobro | ARS                                       |
 
 Estos datos son visibles y se pueden copiar. No permiten verificar automáticamente el titular ni conectar la cuenta de Mercado Pago. El receptor real del checkout depende de las credenciales de la cuenta vendedora, que deben corresponder a estos datos. Todavía no se hizo esa comprobación ni se activaron cobros reales. Antes de pagar se debe revisar el titular mostrado por Mercado Pago; no se inventa un nombre verificado.
 
@@ -252,7 +252,7 @@ Para SMTP en puerto 465, usá `SMTP_SECURE=true`. En producción se exige HTTPS 
 
 El servidor revisa al arrancar y cada hora si corresponde un respaldo: crea uno si no existe o pasaron 24 horas. Las copias se guardan en `apps/api/.backups/<organización>`. Desde **Configuración → Copias de seguridad**, el dueño puede crear una manual y descargar las últimas diez. La descarga solo permite respaldos de su organización y valida SHA-256. Si el servidor está apagado no se generan copias; al volver a arrancar se comprueba el último respaldo.
 
-Cada `.json.gz` incluye la organización, sedes, usuarios, permisos, contraseñas cifradas mediante hash, socios, planes, promociones, stock y movimientos. No incluye sesiones ni enlaces de recuperación, ni archivos de `.env`. El archivo está comprimido, **no encriptado**: guardalo en un lugar privado y descargá una copia fuera de la computadora. No hay borrado automático de respaldos en esta versión.
+Cada `.json.gz` incluye la organización, sedes, usuarios, permisos, contraseñas cifradas mediante hash, socios, planes, promociones, stock, movimientos, fotos, credenciales QR con hash, acreditaciones, ingresos y arqueos. No incluye sesiones ni enlaces de recuperación, ni archivos de `.env`. El archivo está comprimido, **no encriptado**: guardalo en un lugar privado y descargá una copia fuera del servidor. En el plan gratuito de Render los archivos de respaldo son temporales y pueden desaparecer al reiniciar o desplegar; las fotos operativas se guardan en PostgreSQL. No hay borrado automático de respaldos en esta versión.
 
 ### Restaurar sin sobrescribir una base existente
 
@@ -281,9 +281,9 @@ Las pruebas cubren TypeScript, compilación de React, API con PostgreSQL embebid
 
 También se recorre con React Testing Library la aplicación contra Express y una base real en memoria: crear socio con pago, buscar desde otra pantalla, renovar, anular con motivo, abrir caja/balances/configuración, respaldar y consultar la ficha con permisos de entrenador. Se ejecuta con tamaños de ventana DOM de 1440 y 390 píxeles. Se comprueban además la vista previa de importación y los formularios de recuperación. **Estas pruebas no verifican el diseño renderizado por un navegador ni un dispositivo físico.**
 
-La verificación visual en navegador sigue pendiente por el bloqueo de acceso de la plataforma. Tampoco se realizó una compra real/sandbox de Mercado Pago, una entrega SMTP real ni una prueba con PostgreSQL externo. Se probó crear, descargar y restaurar un respaldo en una base vacía, además de rechazar restauraciones sobre datos existentes.
+La web está desplegada en Render con PostgreSQL externo. Las pruebas automatizadas usan PostgreSQL embebido; no se realizó una compra real/sandbox de Mercado Pago ni una entrega SMTP real. Se probó crear, descargar y restaurar un respaldo en una base vacía, además de rechazar restauraciones sobre datos existentes.
 
-Antes de publicarlo quedan la autorización del despliegue HTTPS y las pruebas de aceptación visual, correo y pagos con los proveedores reales. Para grandes volúmenes faltan paginación y búsqueda en servidor; la búsqueda actual usa los socios cargados de la sede. No incluye asistencia, QR, molinetes, rutinas o facturación fiscal. No se publicó ni se instaló en tu PC.
+La versión publicada está en https://fitware-3olk.onrender.com. El historial de cuotas pagina y busca en el servidor. La búsqueda general usa los socios cargados de la sede. Incluye recepción con QR, foto e intentos de ingreso; no conecta molinetes físicos, rutinas ni facturación fiscal. Las conexiones de pagos y correo reales requieren configuración y pruebas con los proveedores.
 
 ## Publicación en Render
 
@@ -306,3 +306,42 @@ El registro exige repetir la contraseña y comprueba la coincidencia tanto en Re
 La API normaliza espacios externos y Unicode de los textos de formularios JSON y parámetros de consulta, y convierte los emails a minúsculas. Rechaza caracteres de control, claves de prototipo y estructuras excesivas; los esquemas por operación verifican formatos, límites, números, fechas y opciones. La importación valida sus textos con los mismos esquemas de socios. El webhook de Mercado Pago conserva el contenido original para su validación específica. Los mensajes de validación se devuelven en español, con nombres de campo y un mapa `fields`.
 
 Los nombres y las observaciones conservan apóstrofes, acentos y texto literal: React los muestra escapados, no como HTML. SQL continúa usando parámetros y los CSV neutralizan prefijos de fórmula, incluidos los precedidos por espacios. Esto es validación y manejo contextual de entradas, no una garantía general de ausencia de vulnerabilidades ni una auditoría completa de seguridad.
+
+## Mejoras a partir de la recepción de un gimnasio (4.0)
+
+El escenario de trabajo es de unos 500 pases mensuales entre altas y renovaciones. El historial presenta fecha, nombre, DNI, teléfono, pase, precio final, forma de pago, referencia y promoción. Busca en servidor y pagina de a 50 filas; descargar Excel respeta fechas, búsqueda y medio, e incluye estado y número de cobro. Un combo o 2x1 tiene una orden y varias filas de pases: se distribuyen precio y descuento sin duplicar ingresos. Las filas anuladas se conservan y se excluyen de los totales confirmados. El contacto y DNI reflejan la ficha actual; importes, planes y medios conservan su snapshot.
+
+### Cobros, consumibles y acreditaciones
+
+- En **Pagos y suscripciones → Administrar formas de pago**, el dueño crea medios específicos (banco, billetera, débito, crédito, QR). Se usan también al vender, reponer stock y registrar egresos. Cada operación conserva el nombre y la referencia aunque luego se desactive el medio. El grupo contable es efectivo o electrónico; no se calculan comisiones ni fechas de liquidación de tarjetas.
+- En un cobro electrónico, “Dejar pendiente hasta verificar la acreditación” guarda una intención que **no activa pases ni ingresa a caja**. Se revisa en la bandeja de acreditaciones. Confirmación manual y verificación por Mercado Pago quedan diferenciadas, con operador y motivo. Rechazar no crea un pago. La confirmación vuelve a cotizar, muestra vencimientos, exige que el importe no haya cambiado y es atómica e idempotente.
+- El alta con primer pago supone un cobro recibido. Para una transferencia pendiente, guardá primero al socio sin cobrar y luego informá el cobro pendiente.
+- Los egresos enviados por la interfaz ahora también tienen referencia idempotente para evitar duplicados al reintentar.
+
+### Cuenta de Mercado Pago del gimnasio
+
+La conexión para **cuotas del gimnasio** es distinta de las variables `MP_*` que cobran la suscripción de FITWare. Se configura de forma privada en el servidor, nunca en el frontend ni en el repositorio:
+
+| Variable              | Uso                                                                      |
+| --------------------- | ------------------------------------------------------------------------ |
+| `GYM_MP_GYM_ID`       | ID de la sede cuyo receptor se está conectando. No habilita otras sedes. |
+| `GYM_MP_ACCESS_TOKEN` | Credencial privada de esa cuenta de Mercado Pago.                        |
+| `GYM_MP_COLLECTOR_ID` | ID del receptor que debe devolver Mercado Pago.                          |
+
+Esta primera conexión admite una sede por despliegue; las demás conservan la conciliación manual. Al revisar un pendiente, el dueño puede consultar el número de operación por la API oficial. Se validan receptor, ARS, estado aprobado, importe exacto, ausencia de devolución, fecha de aprobación próxima al pendiente y operación no usada antes. En producción se rechazan operaciones de prueba. La asignación al socio la revisa el operador; no se deduce solo por importe. La verificación es puntual, no una sincronización continua de reembolsos/contracargos. Solo aplica a operaciones accesibles por Payments API: una transferencia personal a CVU puede requerir confirmación manual. No se hicieron cobros reales ni se activó esta conexión sin credenciales.
+
+Referencia: [Mercado Pago — consultar un pago](https://www.mercadopago.com.ar/developers/es/reference/online-payments/subscriptions/get-payment/get).
+
+### Arqueo y recepción
+
+- **Caja y movimientos → Arqueo:** saldo inicial en efectivo, esperado por medio, contado/acreditado y diferencia. Se exige explicación si hay diferencias. Cada revisión queda guardada, sin sobrescribir la anterior; si cambia un cobro o anulación, se detecta que debe revisarse de nuevo. No bloquea el día. El saldo inicial corresponde a la fila Efectivo; si se crean otros medios de efectivo, no hay que contar los mismos billetes dos veces.
+- **Ingresos:** búsqueda por DNI/nombre, lector QR USB que escribe como teclado y cámara en navegadores con `BarcodeDetector`. Si no está disponible o falta permiso de cámara, funciona la búsqueda manual. Se muestra la foto y la vigencia de cada actividad; el servidor vuelve a validar al registrar. Se agrupan reintentos dentro de 60 segundos por socio, área y resultado. No depende de un PIN enviado ni abre un molinete.
+- En **ficha del socio**, foto JPG/PNG hasta 2 MB, normalizada y guardada en PostgreSQL; el dueño o personal autorizado puede crear, renovar o revocar una credencial QR. Al renovar se invalida la anterior; el token solo se entrega en ese momento y en la base queda su hash. No contiene DNI. La lectura de fotos y credenciales exige sesión, sede y permisos.
+- El filtro Activo/Vencido se calcula para la actividad elegida. El DNI se corrige desde Editar datos / DNI, conservando historial y registrando el cambio. Las promociones se ven en la navegación, la cotización, la ficha y el historial.
+- **Resumen y balances** agrega ingresos registrados por área y socios únicos, separados de la cantidad de socios con pase vigente. “Ingreso general” no se atribuye a todas las actividades del socio.
+
+Permisos adicionales: `payments.reconcile`, `cash.count`, `access.checkin`, `access.manage`. El dueño conserva acceso completo; las recepciones nuevas incluyen control de ingresos. Los permisos personalizados anteriores no se amplían automáticamente. El dueño puede asignarlos en Mi equipo.
+
+### Revisión y compatibilidad
+
+La migración de esquema 5 es aditiva y mantiene los datos anteriores. Los respaldos nuevos incluyen las tablas agregadas; el restaurador también acepta respaldos de esquema 4. Se verifican cobros duplicados/concurrentes, permisos, aislamiento entre sedes, montos de promociones, costo y stock, vigencias exclusivas, anulaciones, restauración y un historial de 500 pases. El health check consulta la base y expone la versión desplegada sin credenciales.
