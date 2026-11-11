@@ -345,3 +345,7 @@ Permisos adicionales: `payments.reconcile`, `cash.count`, `access.checkin`, `acc
 ### Revisión y compatibilidad
 
 La migración de esquema 5 es aditiva y mantiene los datos anteriores. Los respaldos nuevos incluyen las tablas agregadas; el restaurador también acepta respaldos de esquema 4. Se verifican cobros duplicados/concurrentes, permisos, aislamiento entre sedes, montos de promociones, costo y stock, vigencias exclusivas, anulaciones, restauración y un historial de 500 pases. El health check consulta la base y expone la versión desplegada sin credenciales.
+
+### Dependencias revisadas
+
+Se actualizaron Express y body-parser (2.4.0), corrigiendo la alerta alta del procesamiento de solicitudes comprimidas. npm audit de producción conserva dos alertas moderadas vinculadas a uuid transitivo de ExcelJS. El aviso afecta las funciones v3/v5/v6 con buffers externos; ExcelJS usa únicamente v4 sin esos buffers, según la revisión del código de esta versión. No se aplicó el downgrade incompatible de ExcelJS que propone `npm audit fix --force`. Referencias: [aviso body-parser](https://github.com/advisories/GHSA-27r3-jxmh-p828) y [aviso uuid](https://github.com/advisories/GHSA-w5hq-g745-h8pq). La ausencia de alertas en npm audit no equivale a una auditoría completa de seguridad.
