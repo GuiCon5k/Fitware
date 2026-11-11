@@ -790,3 +790,26 @@ test("respaldo v5 restaura fotos, medios, pendientes, ingresos y arqueos sin per
     await fresh.close();
   }
 });
+test("health check identifica la versión activa y falla si la base no está disponible", async () => {
+  const healthy = ok(await req("/health"));
+  assert.equal(healthy.release, "4.0.1");
+  assert.equal(typeof healthy.commit, "string");
+  const unavailable = {
+    ...db,
+    query: async () => {
+      throw new Error("private DB connection failure");
+    },
+  } as Database;
+  const isolated = createApp(unavailable).listen(0, "127.0.0.1");
+  await new Promise<void>((r) => isolated.on("listening", r));
+  try {
+    const r = await originalFetch(
+      `http://127.0.0.1:${(isolated.address() as any).port}/api/health`,
+    );
+    assert.equal(r.status, 503);
+    assert.deepEqual(await r.json(), { status: "unavailable" });
+  } finally {
+    isolated.closeAllConnections();
+    await new Promise<void>((r) => isolated.close(() => r()));
+  }
+});

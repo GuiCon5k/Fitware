@@ -344,7 +344,7 @@ Permisos adicionales: `payments.reconcile`, `cash.count`, `access.checkin`, `acc
 
 ### Revisión y compatibilidad
 
-La migración de esquema 5 es aditiva y mantiene los datos anteriores. Los respaldos nuevos incluyen las tablas agregadas; el restaurador también acepta respaldos de esquema 4. Se verifican cobros duplicados/concurrentes, permisos, aislamiento entre sedes, montos de promociones, costo y stock, vigencias exclusivas, anulaciones, restauración y un historial de 500 pases. El health check consulta la base y expone la versión desplegada sin credenciales.
+La migración de esquema 5 es aditiva y mantiene los datos anteriores. Los respaldos nuevos incluyen las tablas agregadas; el restaurador también acepta respaldos de esquema 4. Se verifican cobros duplicados/concurrentes, permisos, aislamiento entre sedes, montos de promociones, costo y stock, vigencias exclusivas, anulaciones, restauración y un historial de 500 pases. El health check consulta la base y expone versión y commit desplegados sin credenciales, para verificar una publicación aunque la API de gestión de Render no responda.
 
 ### Dependencias revisadas
 

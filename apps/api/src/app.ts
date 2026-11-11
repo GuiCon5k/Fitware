@@ -198,7 +198,12 @@ export function createApp(
   app.get("/api/health", async (_req, res) => {
     try {
       await db.query("SELECT 1");
-      res.json({ status: "ok", version: 4, release: "4.0.0" });
+      res.json({
+        status: "ok",
+        version: 4,
+        release: "4.0.1",
+        commit: process.env.RENDER_GIT_COMMIT || "local",
+      });
     } catch {
       res.status(503).json({ status: "unavailable" });
     }
