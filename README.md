@@ -299,6 +299,14 @@ Servicio: https://fitware-3olk.onrender.com · repositorio: https://github.com/G
 
 No se activan pagos reales ni SMTP hasta configurar y probar sus credenciales. El plan gratuito actual del servicio no constituye una configuración con persistencia garantizada. Elegir y aprobar los recursos persistentes antes de cargar datos reales. Cambiar los comandos de un servicio creado manualmente se realiza en Settings de Render.
 
+## Panel privado de FITWare
+
+Abrí `/administracion` para ver a los dueños de las organizaciones, su suscripción y sus gimnasios. Podés buscar por nombre de cliente, organización o sede y abrir la ficha para consultar sus datos de contacto. Cada sede muestra el estado de la suscripción de su organización. El vencimiento se calcula a partir del período de prueba y de los pagos acreditados de FITWare.
+
+El acceso se habilita para una sola cuenta. Configurá en el servidor `PLATFORM_ADMIN_INVITE` con los campos JSON `email`, `hash` (SHA-256 en hexadecimal de un código aleatorio de alta entropía) y `expires` (fecha ISO UTC). El operador introduce el código y elige su contraseña desde el panel. La invitación vence y solo puede activar la cuenta una vez. Las sesiones del panel y las cuentas de gimnasios se autentican por separado.
+
+Con `PLATFORM_DEMO_ENABLED=true`, el servidor crea una organización de demostración con 10 socios, 10 actividades, 30 pagos de cuotas y 5 egresos ficticios. Abrila desde el panel privado. Sus datos quedan fuera de los reportes, respaldos y clientes reales. La carga inicial se ejecuta una vez y los reinicios conservan los cambios hechos en el demo.
+
 ## Registro y validación de formularios
 
 El registro exige repetir la contraseña y comprueba la coincidencia tanto en React como en Express. Los campos de contraseña incluyen controles accesibles para mostrar/ocultar su contenido en registro, ingreso, cambio, recuperación y empleados. Las contraseñas no se recortan ni normalizan.

@@ -56,6 +56,12 @@ Implementadas sobre la base del commit `352db89`.
 
 La compilación pasó. Se ejecutaron 52 pruebas de API y 20 de interfaz. En Windows, la prueba del comando de restauración usó un adaptador local para ejecutar el CLI de npm. En Chrome se revisaron el inicio de sesión y el editor de socios a 1440 y 390 píxeles con datos ficticios, incluidos el foco en errores y la reducción de movimiento.
 
+## Panel privado y organización demo
+
+El panel de FITWare está en `/administracion`. Una sola cuenta de operador puede consultar el directorio y los datos de contacto de los dueños. La habilitación usa una invitación privada de un solo uso. La migración 6 añade las tablas del operador y sus sesiones y el indicador de organización demo.
+
+El demo abre con una sesión separada desde el panel. La carga de arranque con `PLATFORM_DEMO_ENABLED=true` crea una organización ficticia con 10 socios, 10 actividades, 30 pagos y 5 egresos. Los pagos de la suscripción y las solicitudes de recuperación quedan fuera de ese entorno.
+
 ## Cómo retomar
 
 Revisar la rama remota y los cambios locales antes de publicar. Con autorización vigente, verificar la versión y el commit servido por `/api/health` después de la publicación.

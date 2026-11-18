@@ -196,7 +196,7 @@ async function migrateV4(db: Database) {
   });
 }
 
-export async function migrate(db: Database) {
+async function migrateV5(db: Database) {
   await migrateV4(db);
   if (
     (await db.query("SELECT version FROM schema_versions WHERE version=5")).rows
@@ -221,6 +221,24 @@ export async function migrate(db: Database) {
       `CREATE INDEX checkins_gym_date ON checkins(gym_id,created_at DESC)`,
       `CREATE INDEX pending_payments_gym_status ON pending_payments(gym_id,status,created_at DESC)`,
       `INSERT INTO schema_versions VALUES(5)`,
+    ])
+      await tx.query(sql);
+  });
+}
+
+export async function migrate(db: Database) {
+  await migrateV5(db);
+  if (
+    (await db.query("SELECT version FROM schema_versions WHERE version=6")).rows
+      .length
+  )
+    return;
+  await db.transaction(async (tx) => {
+    for (const sql of [
+      `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT false`,
+      `CREATE TABLE IF NOT EXISTS platform_admin(id INTEGER PRIMARY KEY CHECK(id=1),email TEXT NOT NULL,password_hash TEXT NOT NULL)`,
+      `CREATE TABLE IF NOT EXISTS platform_sessions(token_hash TEXT PRIMARY KEY,admin_id INTEGER NOT NULL DEFAULT 1 REFERENCES platform_admin(id) ON DELETE CASCADE,expires_at TIMESTAMPTZ NOT NULL)`,
+      `INSERT INTO schema_versions VALUES(6) ON CONFLICT DO NOTHING`,
     ])
       await tx.query(sql);
   });

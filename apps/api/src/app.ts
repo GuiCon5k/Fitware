@@ -5,7 +5,7 @@ import express, {
 } from "express";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Database, Row } from "./db.js";
 import { hashPassword, tokenHash, verifyPassword } from "./security.js";
@@ -45,6 +45,15 @@ import { paymentFields, resolveMethod } from "./payment-methods.js";
 import { installGymOperations } from "./gym-operations.js";
 import { installAccess, photoParser } from "./access.js";
 import { memberSchema } from "./validators.js";
+import { platformRoutes } from "./platform.js";
+import {
+  cookieOptions,
+  demoCookie,
+  isDemoRequest,
+  issueTenantSession,
+  sessionToken,
+  tenantCookie,
+} from "./tenant-session.js";
 type User = {
   id: string;
   name: string;
@@ -129,18 +138,18 @@ export function createApp(
       next(e);
     }
   });
-  const sessionToken = (req: Request) =>
-    req.headers.cookie
-      ?.split(";")
-      .find((x) => x.trim().startsWith("fitware_session="))
-      ?.trim()
-      .slice(16) || "";
   const auth = async (req: Request, _res: Response, next: NextFunction) => {
     try {
+      const demo = isDemoRequest(req);
       const user = (
         await db.query<User>(
-          `SELECT u.id,u.name,u.email,u.role,u.account_id,u.phone,u.address,u.permissions,u.active FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active`,
-          [tokenHash(sessionToken(req))],
+          `SELECT u.id,u.name,u.email,u.role,u.account_id,u.phone,u.address,u.permissions,u.active
+           FROM users u JOIN sessions s ON s.user_id=u.id JOIN accounts a ON a.id=u.account_id
+           WHERE s.token_hash=$1 AND s.expires_at>now() AND u.active AND a.is_demo=$2`,
+          [
+            tokenHash(sessionToken(req, demo ? demoCookie : tenantCookie)),
+            demo,
+          ],
         )
       ).rows[0];
       if (!user) throw new HttpError(401, "Ingresá para continuar");
@@ -173,19 +182,7 @@ export function createApp(
     permissions: u.permissions || [],
   });
   async function session(res: Response, user: Row) {
-    const token = randomBytes(32).toString("hex");
-    await db.query("INSERT INTO sessions VALUES($1,$2,$3)", [
-      tokenHash(token),
-      user.id,
-      new Date(Date.now() + 8 * 3600000),
-    ]);
-    res.cookie("fitware_session", token, {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 8 * 3600000,
-      path: "/api",
-    });
+    await issueTenantSession(db, res, user.id);
     return publicUser(user);
   }
   const loginLimiter = rateLimit({
@@ -213,9 +210,10 @@ export function createApp(
       .object({ email: z.email(), password: z.string().min(1).max(200) })
       .parse(req.body);
     const u = (
-      await db.query("SELECT * FROM users WHERE email=$1 AND active", [
-        b.email.toLowerCase(),
-      ])
+      await db.query(
+        "SELECT u.* FROM users u JOIN accounts a ON a.id=u.account_id WHERE u.email=$1 AND u.active AND NOT a.is_demo",
+        [b.email.toLowerCase()],
+      )
     ).rows[0];
     if (!u || !verifyPassword(b.password, u.password_hash))
       throw new HttpError(401, "Email o contraseña incorrectos");
@@ -267,13 +265,28 @@ export function createApp(
   });
   app.post("/api/billing/webhook", webhook(db));
   installRecovery(app, db, options.resetSender);
+  app.use("/api/platform", platformRoutes(db, loginLimiter));
   app.use("/api", auth);
+  app.use("/api", (req, _res, next) => {
+    if (
+      isDemoRequest(req) &&
+      /^\/(billing\/(quote|checkout)|profile\/password|backups)(\/|$)/.test(
+        req.path,
+      )
+    )
+      throw new HttpError(
+        403,
+        "Esta operación no está habilitada en el gimnasio demo.",
+      );
+    next();
+  });
   app.get("/api/auth/me", (req, res) => res.json(publicUser(req.user)));
   app.post("/api/auth/logout", async (req, res) => {
+    const cookie = isDemoRequest(req) ? demoCookie : tenantCookie;
     await db.query("DELETE FROM sessions WHERE token_hash=$1", [
-      tokenHash(sessionToken(req)),
+      tokenHash(sessionToken(req, cookie)),
     ]);
-    res.clearCookie("fitware_session", { path: "/api" }).sendStatus(204);
+    res.clearCookie(cookie, cookieOptions("/api")).sendStatus(204);
   });
   app.put("/api/profile", async (req, res) => {
     const b = z
@@ -312,7 +325,7 @@ export function createApp(
       ]);
       await tx.query(
         "DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2",
-        [req.user.id, tokenHash(sessionToken(req))],
+        [req.user.id, tokenHash(sessionToken(req, tenantCookie))],
       );
     });
     res.sendStatus(204);

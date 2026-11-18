@@ -4,11 +4,17 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly fields: FieldErrors = {},
+    readonly status?: number,
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
+
+export const onDemoPage = () =>
+  typeof location !== "undefined" && /^\/demo\/?$/.test(location.pathname);
+const demoHeaders = () =>
+  onDemoPage() ? { "X-Fitware-Demo": "1" } : undefined;
 
 let gymId = "";
 export const setGym = (id: string) => {
@@ -19,6 +25,7 @@ export async function downloadApi(path: string, filename: string) {
     credentials: "same-origin",
     headers: {
       "X-Fitware-Client": "web",
+      ...demoHeaders(),
       ...(gymId ? { "X-Gym-Id": gymId } : {}),
     },
   }).catch(() => {
@@ -49,6 +56,7 @@ export async function api<T = unknown>(
     headers: {
       "Content-Type": "application/json",
       "X-Fitware-Client": "web",
+      ...demoHeaders(),
       ...(gymId ? { "X-Gym-Id": gymId } : {}),
       ...options.headers,
     },
@@ -61,7 +69,11 @@ export async function api<T = unknown>(
     const data = await res
       .json()
       .catch(() => ({ error: "No se pudo conectar con el servidor" }));
-    if (res.status === 401 && !path.startsWith("/auth/"))
+    if (
+      res.status === 401 &&
+      !path.startsWith("/auth/") &&
+      !path.startsWith("/platform/")
+    )
       window.dispatchEvent(new Event("session-expired"));
     const fields = Object.fromEntries(
       Object.entries(data.fields || {}).filter(
@@ -71,6 +83,7 @@ export async function api<T = unknown>(
     throw new ApiError(
       data.error || "No se pudo completar la operación",
       fields,
+      res.status,
     );
   }
   return res.status === 204 ? (undefined as T) : res.json();

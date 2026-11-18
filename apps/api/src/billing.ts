@@ -28,8 +28,23 @@ export async function billingStatus(db: Database, accountId: string) {
       [accountId],
     )
   ).rows;
-  const trialValid = dateText(account.trial_until) > today();
-  let coveredUntil = trialValid ? dateText(account.trial_until) : today();
+  return {
+    ...billingConfig(),
+    ...serviceCoverage(account.trial_until, receipts),
+    ...(account.is_demo
+      ? { enabled: false, configured: false, active: true }
+      : {}),
+    account_name: account.name,
+  };
+}
+
+export function serviceCoverage(
+  trialUntil: string,
+  receipts: readonly Row[],
+  day = today(),
+) {
+  const trial = dateText(trialUntil);
+  let coveredUntil = trial > day ? trial : day;
   let paid = false;
   for (const receipt of receipts) {
     if (
@@ -40,15 +55,8 @@ export async function billingStatus(db: Database, accountId: string) {
       paid = true;
     }
   }
-  const active = coveredUntil > today();
-  const until = active ? coveredUntil : dateText(account.trial_until);
-  return {
-    ...billingConfig(),
-    active,
-    until,
-    paid,
-    account_name: account.name,
-  };
+  const active = coveredUntil > day;
+  return { active, until: active ? coveredUntil : trial, paid };
 }
 async function provider(path: string, options: RequestInit = {}) {
   const response = await fetch("https://api.mercadopago.com" + path, {

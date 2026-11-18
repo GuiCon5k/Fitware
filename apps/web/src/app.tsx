@@ -105,7 +105,7 @@ const roleNames = {
   receptionist: "Recepcionista",
   trainer: "Entrenador",
 };
-export function App() {
+export function App({ demo = false }: { demo?: boolean } = {}) {
   const [user, setUser] = useState<User | null>(null),
     [checking, setChecking] = useState(true),
     [page, setPage] = useState<Page>("dashboard"),
@@ -376,6 +376,17 @@ export function App() {
         <p>Cargando FITWare…</p>
       </div>
     );
+  if (demo && !user)
+    return (
+      <main className="boot">
+        <Dumbbell />
+        <h1>Gimnasio demo</h1>
+        <p>Abrilo desde tu panel privado para usar los datos de ejemplo.</p>
+        <a className="primary" href="/administracion">
+          Ir al panel privado
+        </a>
+      </main>
+    );
   if (resetToken)
     return (
       <Recovery
@@ -625,6 +636,17 @@ export function App() {
             {user.name}
           </button>
         </header>
+        {demo && (
+          <div className="demo-banner">
+            <span>
+              <Dumbbell size={17} aria-hidden="true" />{" "}
+              <strong>Gimnasio demo</strong> · Datos ficticios
+            </span>
+            <a href="/administracion">
+              Volver al panel privado <ChevronRight size={15} />
+            </a>
+          </div>
+        )}
         <main className="content" aria-busy={loading}>
           <div className="page-heading">
             <div>
@@ -663,7 +685,7 @@ export function App() {
               )}
             </div>
           )}
-          {billing && owner && page !== "billing" && (
+          {billing && owner && !demo && page !== "billing" && (
             <div className="service-strip">
               <ShieldCheck size={15} />
               {billing.enabled

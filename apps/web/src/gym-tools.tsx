@@ -7,6 +7,7 @@ import {
   money,
   shortDate,
   localDay,
+  onDemoPage,
   type FieldErrors,
 } from "./api";
 import { Field, PaymentTable } from "./components";
@@ -178,7 +179,13 @@ export function PaymentHistory({
   onVoid?: (p: Payment) => void;
   revision?: number;
 }) {
-  const [from, setFrom] = useState(localDay().slice(0, 7) + "-01"),
+  const [from, setFrom] = useState(() => {
+      const day = localDay();
+      if (!onDemoPage()) return day.slice(0, 7) + "-01";
+      const date = new Date(day + "T12:00:00Z");
+      date.setUTCDate(date.getUTCDate() - 120);
+      return date.toISOString().slice(0, 10);
+    }),
     [to, setTo] = useState(localDay()),
     [query, setQuery] = useState(""),
     [method, setMethod] = useState("all"),
@@ -604,7 +611,7 @@ export function photoUrl(
   gymId: string,
   version?: string | null,
 ) {
-  return `/api/member-photos/${encodeURIComponent(memberId)}?gym_id=${encodeURIComponent(gymId)}&v=${encodeURIComponent(version || "")}`;
+  return `/api/member-photos/${encodeURIComponent(memberId)}?gym_id=${encodeURIComponent(gymId)}&v=${encodeURIComponent(version || "")}${onDemoPage() ? "&demo=1" : ""}`;
 }
 export function MemberAccessTools({
   member,

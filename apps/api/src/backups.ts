@@ -71,14 +71,20 @@ async function snapshot(db: Database, accountId: string) {
   return db.transaction(async (tx) => {
     await tx.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
     const account = (
-      await tx.query("SELECT * FROM accounts WHERE id=$1", [accountId])
+      await tx.query(
+        "SELECT id,name,trial_until,paid_until,created_at FROM accounts WHERE id=$1 AND NOT is_demo",
+        [accountId],
+      )
     ).rows[0];
     if (!account) throw new HttpError(404, "Organización no encontrada");
     const tables: Record<string, Row[]> = {};
     for (const table of backupTables) {
       let sql: string;
-      if (table === "accounts") sql = "SELECT * FROM accounts WHERE id=$1";
-      else if (table === "gyms") sql = "SELECT * FROM gyms WHERE account_id=$1";
+      if (table === "accounts") {
+        tables[table] = [account];
+        continue;
+      }
+      if (table === "gyms") sql = "SELECT * FROM gyms WHERE account_id=$1";
       else if (accountTables.has(table))
         sql = `SELECT * FROM ${table} WHERE account_id=$1`;
       else if (gymTables.has(table))
@@ -165,7 +171,9 @@ export function createBackupService(
     return bytes;
   }
   async function due() {
-    for (const account of (await db.query("SELECT id FROM accounts")).rows) {
+    for (const account of (
+      await db.query("SELECT id FROM accounts WHERE NOT is_demo")
+    ).rows) {
       const last = (await list(account.id))[0];
       if (
         !last ||

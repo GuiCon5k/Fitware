@@ -82,9 +82,10 @@ export function installRecovery(
         "La recuperación requiere una dirección HTTPS configurada",
       );
     const user = (
-      await db.query("SELECT id,email FROM users WHERE email=$1 AND active", [
-        email.toLowerCase(),
-      ])
+      await db.query(
+        "SELECT u.id,u.email FROM users u JOIN accounts a ON a.id=u.account_id WHERE u.email=$1 AND u.active AND NOT a.is_demo",
+        [email.toLowerCase()],
+      )
     ).rows[0];
     if (user) {
       const recent = (

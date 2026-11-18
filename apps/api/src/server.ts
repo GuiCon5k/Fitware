@@ -1,5 +1,6 @@
 import { connectDatabase, migrate } from "./db.js";
 import { seed } from "./seed.js";
+import { seedDemo } from "./demo.js";
 import { createApp } from "./app.js";
 import { createBackupService } from "./backups.js";
 import express from "express";
@@ -14,6 +15,7 @@ if (process.env.RENDER_EXTERNAL_URL && !process.env.APP_ORIGIN)
 const db = await connectDatabase();
 await migrate(db);
 if (!production || process.env.ADMIN_PASSWORD) await seed(db);
+if (process.env.PLATFORM_DEMO_ENABLED === "true") await seedDemo(db);
 const backups = createBackupService(db);
 const stopBackups = backups.start();
 const app = createApp(db, { backups });
