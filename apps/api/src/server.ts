@@ -15,7 +15,12 @@ if (process.env.RENDER_EXTERNAL_URL && !process.env.APP_ORIGIN)
 const db = await connectDatabase();
 await migrate(db);
 if (!production || process.env.ADMIN_PASSWORD) await seed(db);
-if (process.env.PLATFORM_DEMO_ENABLED === "true") await seedDemo(db);
+if (process.env.PLATFORM_DEMO_ENABLED === "true") {
+  const demo = await seedDemo(db);
+  console.log(
+    `Gimnasio demo: ${demo.socios} socios, ${demo.actividades} actividades, ${demo.pagos} pagos y ${demo.egresos} egresos.`,
+  );
+}
 const backups = createBackupService(db);
 const stopBackups = backups.start();
 const app = createApp(db, { backups });

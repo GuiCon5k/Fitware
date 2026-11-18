@@ -43,7 +43,12 @@ test("panel privado, estado de clientes, activación de un solo uso y demo aisla
   try {
     await migrate(db);
     await seedDemo(db);
-    await seedDemo(db);
+    assert.deepEqual(await seedDemo(db), {
+      socios: 10,
+      actividades: 10,
+      pagos: 30,
+      egresos: 5,
+    });
     assert.deepEqual(await (await request("/platform/me")).json(), {
       authenticated: false,
       setup: false,

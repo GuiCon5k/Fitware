@@ -175,4 +175,22 @@ export async function seedDemo(db: Database) {
       );
     }
   });
+  const { rows } = await db.query<{
+    socios: number;
+    actividades: number;
+    pagos: number;
+    egresos: number;
+  }>(
+    `SELECT
+      (SELECT count(*)::integer FROM members WHERE gym_id=$1) socios,
+      (SELECT count(DISTINCT activity)::integer FROM plans WHERE gym_id=$1) actividades,
+      (SELECT count(*)::integer FROM payments WHERE gym_id=$1) pagos,
+      (SELECT count(*)::integer FROM expenses WHERE gym_id=$1) egresos
+     FROM gyms g JOIN accounts a ON a.id=g.account_id
+     WHERE g.id=$1 AND a.id=$2 AND a.is_demo`,
+    [demoGymId, demoAccountId],
+  );
+  if (!rows.length)
+    throw new Error("No se encontró la organización aislada del demo.");
+  return rows[0];
 }
