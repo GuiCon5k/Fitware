@@ -196,7 +196,14 @@ test("registro compara contraseñas antes de enviar y permite mostrarlas sin bor
   await user.click(
     screen.getByRole("button", { name: "Crear cuenta", exact: true }),
   );
-  assert.match(screen.getByRole("alert").textContent || "", /no coinciden/);
+  const feedback = screen.getByRole("alert");
+  assert.match(feedback.textContent || "", /no coinciden/);
+  assert.ok(dom.document.activeElement === confirm);
+  assert.equal(confirm.getAttribute("aria-invalid"), "true");
+  assert.ok(
+    confirm.getAttribute("aria-describedby")?.split(" ").includes(feedback.id),
+  );
+
   assert.equal(
     requests.filter((p) => p.endsWith("/auth/register")).length,
     count,
@@ -217,6 +224,10 @@ test("registro compara contraseñas antes de enviar y permite mostrarlas sin bor
   );
   assert.equal(password.type, "password");
   assert.equal(password.value, "ClaveDePrueba2026!");
+  await user.clear(password);
+  await user.type(password, confirm.value);
+  assert.equal(confirm.hasAttribute("aria-invalid"), false);
+  assert.equal(screen.queryByRole("alert"), null);
 });
 after(async () => {
   globalThis.fetch = realFetch;
@@ -249,10 +260,20 @@ for (const width of [1440, 390])
     await user.click(
       within(dialog).getByRole("checkbox", { name: /Musculación/ }),
     );
-    await user.selectOptions(
-      within(dialog).getByLabelText("Primer cobro"),
-      "now",
+    const firstPayment = within(dialog).getByLabelText("Primer cobro");
+    await user.selectOptions(firstPayment, "now");
+    await within(dialog).findByText("Calculando primer cobro…");
+    await user.selectOptions(firstPayment, "later");
+    assert.equal(
+      (
+        within(dialog).getByRole("button", {
+          name: "Guardar",
+          exact: true,
+        }) as HTMLButtonElement
+      ).disabled,
+      false,
     );
+    await user.selectOptions(firstPayment, "now");
     await waitFor(() =>
       assert.equal(
         (
@@ -396,6 +417,102 @@ test("importación UI exige revisar filas antes de confirmar y muestra omitidos"
   );
   assert.equal(message, "1 socios importados");
 });
+test("login muestra errores junto a los campos y enfoca el primero al enviar con Enter", async () => {
+  const user = userEvent.setup({ document: dom.document as any });
+  render(
+    <Auth onLogin={() => assert.fail("Ingreso inválido")} initialError="" />,
+  );
+  const email = screen.getByLabelText("Email") as HTMLInputElement;
+  const password = screen.getByLabelText("Contraseña") as HTMLInputElement;
+  let nativeErrors = 0;
+  email.form!.addEventListener("invalid", () => nativeErrors++, true);
+  const before = requests.filter((path) => path.endsWith("/auth/login")).length;
+  await user.type(email, "email-invalido{Enter}");
+  assert.equal(nativeErrors, 0);
+  assert.ok(dom.document.activeElement === email);
+
+  assert.match(screen.getByRole("alert").textContent || "", /2 campos/);
+  assert.match(
+    dom.document.getElementById(email.getAttribute("aria-describedby")!)
+      ?.textContent || "",
+    /email válido/,
+  );
+  assert.equal(password.getAttribute("aria-invalid"), "true");
+  assert.equal(
+    requests.filter((path) => path.endsWith("/auth/login")).length,
+    before,
+  );
+  await user.clear(email);
+  await user.type(email, "dueno@test.com");
+  assert.equal(email.hasAttribute("aria-invalid"), false);
+  assert.equal(password.getAttribute("aria-invalid"), "true");
+  assert.equal(email.value, "dueno@test.com");
+});
+
+test("el editor muestra junto al campo el error devuelto por Express y conserva lo ingresado", async () => {
+  const user = userEvent.setup({ document: dom.document as any });
+  render(<App />);
+  await screen.findByRole("heading", { name: "Tu gimnasio, al día." });
+  await user.click(screen.getByRole("button", { name: "Socios", exact: true }));
+  await user.click(
+    screen.getByRole("button", { name: "Nuevo socio", exact: true }),
+  );
+  const dialog = within(screen.getByRole("dialog"));
+  const phone = dialog.getByLabelText("Teléfono", {
+    exact: true,
+  }) as HTMLInputElement;
+  await user.type(
+    dialog.getByLabelText("Nombre y apellido"),
+    "Validación de socio",
+  );
+  await user.type(dialog.getByLabelText("Documento"), "75176305");
+  await user.type(phone, "1".repeat(41));
+  await user.click(
+    dialog.getByRole("button", { name: "Guardar", exact: true }),
+  );
+  const error = await dialog.findByRole("alert");
+  assert.match(error.textContent || "", /Teléfono.*hasta 40/);
+  assert.equal(phone.getAttribute("aria-describedby"), error.id);
+  assert.ok(
+    dom.document.activeElement === phone,
+    "el error de la API debe enfocar el teléfono",
+  );
+
+  assert.equal(phone.value, "1".repeat(41));
+  assert.equal(
+    (dialog.getByLabelText("Documento") as HTMLInputElement).value,
+    "75176305",
+  );
+  await user.keyboard("{Backspace}");
+  assert.equal(dialog.queryByRole("alert"), null);
+  assert.equal(phone.hasAttribute("aria-invalid"), false);
+});
+
+test("recuperación compara las contraseñas sin intentar usar el enlace", async () => {
+  const user = userEvent.setup({ document: dom.document as any });
+  render(<Recovery token="enlace-de-prueba" onBack={() => {}} />);
+  const password = screen.getByLabelText(
+    "Nueva contraseña",
+  ) as HTMLInputElement;
+  const confirmation = screen.getByLabelText(
+    "Repetir contraseña",
+  ) as HTMLInputElement;
+  const before = requests.filter((path) =>
+    path.endsWith("/auth/reset-password"),
+  ).length;
+  await user.type(password, "ClaveRecuperacion123!");
+  await user.type(confirmation, "OtraClaveDePrueba123!");
+  await user.click(screen.getByRole("button", { name: "Guardar contraseña" }));
+  assert.match(screen.getByRole("alert").textContent || "", /no coinciden/);
+  assert.ok(dom.document.activeElement === confirmation);
+
+  assert.equal(
+    requests.filter((path) => path.endsWith("/auth/reset-password")).length,
+    before,
+  );
+  assert.equal(password.value, "ClaveRecuperacion123!");
+});
+
 test("recuperación UI solicita email y no revela si la cuenta existe", async () => {
   const user = userEvent.setup({ document: dom.document as any });
   render(<Recovery onBack={() => {}} />);
@@ -532,13 +649,21 @@ test("recepción y conciliación: pendiente no activa, revisión habilita y el i
   const confirm = await screen.findByRole("button", {
     name: "Confirmar manualmente",
   });
-  await user.type(
-    screen.getByLabelText("Constancia de la revisión"),
-    "Acreditado, operación 777",
-  );
+  const reason = screen.getByLabelText("Constancia de la revisión");
   await waitFor(() =>
     assert.equal((confirm as HTMLButtonElement).disabled, false),
   );
+  const reviews = () =>
+    requests.filter((path) => /\/pending-payments\/[^/]+\/review$/.test(path))
+      .length;
+  const before = reviews();
+  await user.click(confirm);
+  assert.equal(reason.getAttribute("aria-invalid"), "true");
+  assert.ok(dom.document.activeElement === reason);
+
+  assert.equal(reviews(), before);
+  await user.type(reason, "Acreditado, operación 777{Enter}");
+  assert.equal(reviews(), before);
   await user.click(confirm);
   await screen.findByText("Cobro confirmado y pases habilitados.");
   assert.equal(

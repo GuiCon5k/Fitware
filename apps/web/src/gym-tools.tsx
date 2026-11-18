@@ -1,6 +1,14 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Form } from "./form-guidance";
 import QRCode from "qrcode";
-import { api, downloadApi, money, shortDate, localDay } from "./api";
+import {
+  api,
+  downloadApi,
+  money,
+  shortDate,
+  localDay,
+  type FieldErrors,
+} from "./api";
 import { Field, PaymentTable } from "./components";
 import type { Member, Payment, Plan, User, Quote } from "./types";
 
@@ -33,6 +41,7 @@ export function MethodFields({
     <>
       <Field label="Forma de pago">
         <select
+          name="method"
           value={value.method_detail || value.method}
           onChange={(e) => {
             const m = list.find((m) => m.id === e.target.value);
@@ -54,6 +63,7 @@ export function MethodFields({
       <Field label="Referencia / número de operación (opcional)">
         <input
           maxLength={180}
+          name="reference"
           value={value.reference || ""}
           onChange={(e) => onChange("reference", e.target.value)}
           placeholder="Banco, comprobante o número de operación"
@@ -71,9 +81,7 @@ export function MethodSettings() {
   useEffect(() => {
     void load().catch((e) => setError(e.message));
   }, []);
-  async function add(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = e.currentTarget;
+  async function add(form: HTMLFormElement) {
     setBusy(true);
     setError("");
     try {
@@ -84,8 +92,6 @@ export function MethodSettings() {
       form.reset();
       await load();
       setNotice("Medio creado. Ya se puede usar en cuotas, ventas y egresos.");
-    } catch (e) {
-      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -104,7 +110,7 @@ export function MethodSettings() {
         </p>
       )}
       {notice && <p role="status">{notice}</p>}
-      <form className="toolbar" onSubmit={add}>
+      <Form className="toolbar" onSubmit={add}>
         <Field label="Nombre">
           <input
             name="name"
@@ -122,7 +128,7 @@ export function MethodSettings() {
         <button className="primary" disabled={busy}>
           Agregar medio
         </button>
-      </form>
+      </Form>
       <div className="tools-list">
         {list.map((m) => (
           <div className="renewal-row" key={m.id}>
@@ -383,7 +389,7 @@ export function Reconciliation({
         body: JSON.stringify({
           action,
           reason,
-          provider_payment_id: operation || undefined,
+          provider_payment_id: action === "mercadopago" ? operation : undefined,
           expected_total_cents: quote?.total_cents,
           expected_periods: quote?.lines.map((l) => ({
             member_id: l.member_id,
@@ -401,8 +407,6 @@ export function Reconciliation({
           ? "Pendiente rechazado. No se generó un ingreso."
           : "Cobro confirmado y pases habilitados.",
       );
-    } catch (e) {
-      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -498,7 +502,25 @@ export function Reconciliation({
         </p>
       )}
       {selected && (
-        <div className="review-box">
+        <Form
+          key={selected.id}
+          className="review-box"
+          onSubmit={(_, submitter) =>
+            submitter
+              ? confirm((submitter as HTMLButtonElement).value)
+              : undefined
+          }
+          validate={(_, submitter): FieldErrors =>
+            (submitter as HTMLButtonElement | null)?.value === "mercadopago" &&
+            !/^\d{1,30}$/.test(operation)
+              ? {
+                  provider_payment_id:
+                    "Ingresá entre 1 y 30 números, sin puntos ni espacios.",
+                }
+              : {}
+          }
+        >
+          <button type="submit" disabled hidden />
           <h3>Revisar pago de {selected.member_name}</h3>
           <p>
             {money(selected.amount_cents)} · {selected.method_name}
@@ -516,6 +538,8 @@ export function Reconciliation({
           )}
           <Field label="Constancia de la revisión">
             <input
+              name="reason"
+              required
               value={reason}
               maxLength={180}
               onChange={(e) => setReason(e.target.value)}
@@ -532,6 +556,8 @@ export function Reconciliation({
             <Field label="Número de operación de Mercado Pago">
               <input
                 inputMode="numeric"
+                name="provider_payment_id"
+                maxLength={30}
                 value={operation}
                 onChange={(e) => setOperation(e.target.value)}
               />
@@ -540,41 +566,35 @@ export function Reconciliation({
           <div className="form-actions">
             <button
               className="secondary"
+              type="button"
               disabled={busy}
               onClick={() => setSelected(null)}
             >
               Volver
             </button>
-            <button
-              className="secondary"
-              disabled={busy || !reason.trim()}
-              onClick={() => void confirm("reject")}
-            >
+            <button className="secondary" value="reject" disabled={busy}>
               Rechazar
             </button>
             <button
               className="primary"
               disabled={
-                busy ||
-                !quote ||
-                !reason.trim() ||
-                quote.total_cents !== selected.amount_cents
+                busy || !quote || quote.total_cents !== selected.amount_cents
               }
-              onClick={() => void confirm("confirm")}
+              value="confirm"
             >
               Confirmar manualmente
             </button>
             {connected && (
               <button
                 className="primary"
-                disabled={busy || !quote || !reason.trim() || !operation}
-                onClick={() => void confirm("mercadopago")}
+                disabled={busy || !quote}
+                value="mercadopago"
               >
                 Verificar operación MP
               </button>
             )}
           </div>
-        </div>
+        </Form>
       )}
     </section>
   );
@@ -600,16 +620,18 @@ export function MemberAccessTools({
   const [version, setVersion] = useState(member.photo_updated_at),
     [credential, setCredential] = useState(""),
     [qr, setQr] = useState(""),
+    [photoError, setPhotoError] = useState(""),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
   async function upload(file?: File) {
+    setPhotoError("");
     if (!file) return;
     if (
       !["image/jpeg", "image/png"].includes(file.type) ||
       file.size > 2 * 1024 * 1024
     ) {
-      setError("Usá una foto JPG o PNG de hasta 2 MB.");
+      setPhotoError("Usá una foto JPG o PNG de hasta 2 MB.");
       return;
     }
     setBusy(true);
@@ -623,7 +645,7 @@ export function MemberAccessTools({
       setVersion(new Date().toISOString());
       setNotice("Foto guardada.");
     } catch (e) {
-      setError((e as Error).message);
+      setPhotoError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -671,7 +693,11 @@ export function MemberAccessTools({
         )}
         {canEdit && (
           <div>
-            <Field label="Foto del socio">
+            <Field
+              label="Foto del socio"
+              error={photoError}
+              hint="JPG o PNG · hasta 2 MB. Usá una foto autorizada por el socio."
+            >
               <input
                 type="file"
                 accept="image/jpeg,image/png"
@@ -680,9 +706,6 @@ export function MemberAccessTools({
                 onChange={(e) => void upload(e.target.files?.[0])}
               />
             </Field>
-            <small>
-              JPG o PNG · hasta 2 MB. Usá una foto autorizada por el socio.
-            </small>
             {version && (
               <button
                 className="link"
@@ -833,7 +856,7 @@ export function AccessDesk({
     stream.current = null;
     setCamera(false);
   }
-  async function lookup(value = identifier, area = activity) {
+  async function lookup(value = identifier, area = activity, fromForm = false) {
     const seq = ++lookupSeq.current;
     setBusy(true);
     setError("");
@@ -847,7 +870,10 @@ export function AccessDesk({
       });
       if (seq === lookupSeq.current) setResult(r);
     } catch (e) {
-      if (seq === lookupSeq.current) setError((e as Error).message);
+      if (seq === lookupSeq.current) {
+        if (fromForm) throw e;
+        setError((e as Error).message);
+      }
     } finally {
       if (seq === lookupSeq.current) setBusy(false);
     }
@@ -941,16 +967,15 @@ export function AccessDesk({
           DNI. La foto permite comprobar la identidad antes de registrar el
           ingreso.
         </p>
-        <form
+        <Form
           className="toolbar"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void lookup();
-          }}
+          allowResubmit
+          onSubmit={() => lookup(identifier, activity, true)}
         >
           <Field label="DNI o credencial QR">
             <input
               ref={input}
+              name="identifier"
               value={identifier}
               onChange={(e) => {
                 lookupSeq.current++;
@@ -966,6 +991,7 @@ export function AccessDesk({
           </Field>
           <Field label="Área de ingreso">
             <select
+              name="activity"
               value={activity}
               onChange={(e) => {
                 stop();
@@ -992,7 +1018,7 @@ export function AccessDesk({
           >
             Leer QR con cámara
           </button>
-        </form>
+        </Form>
         {camera && (
           <div>
             <video ref={video} muted playsInline className="access-camera" />
@@ -1192,8 +1218,7 @@ export function CashCount({
       ignore = true;
     };
   }, [day, revision]);
-  async function save(e: FormEvent) {
-    e.preventDefault();
+  async function save() {
     if (!data || busy) return;
     setBusy(true);
     setError("");
@@ -1217,13 +1242,14 @@ export function CashCount({
       setNotice(
         "Arqueo guardado. Los movimientos posteriores requerirán una nueva revisión.",
       );
-    } catch (e) {
-      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
   const latest = data?.history[0];
+  const expectedCents = (row: CountRow) =>
+    row.expected_cents +
+    (row.key === "cash:Efectivo" ? Math.round(Number(opening) * 100) : 0);
   return (
     <section className="panel tools-panel">
       <h2>Arqueo y conciliación del día</h2>
@@ -1272,7 +1298,21 @@ export function CashCount({
         Actualizar movimientos para contar
       </button>
       {data && canCount && (
-        <form onSubmit={save}>
+        <Form
+          key={day}
+          onSubmit={save}
+          validate={(): FieldErrors => {
+            const difference = data.rows.some(
+              (row) =>
+                counts[row.key] &&
+                Math.round(Number(counts[row.key]) * 100) !==
+                  expectedCents(row),
+            );
+            return difference && !reason.trim()
+              ? { reason: "Explicá la diferencia antes de guardar el arqueo." }
+              : {};
+          }}
+        >
           <Field label="Saldo inicial en efectivo (ARS)">
             <input
               type="number"
@@ -1280,6 +1320,7 @@ export function CashCount({
               max="10000000"
               step="0.01"
               required
+              name="opening_cents"
               value={opening}
               onChange={(e) => setOpening(e.target.value)}
             />
@@ -1295,32 +1336,30 @@ export function CashCount({
                 </tr>
               </thead>
               <tbody>
-                {data.rows.map((r) => {
-                  const expected =
-                    r.expected_cents +
-                    (r.key === "cash:Efectivo"
-                      ? Math.round(Number(opening) * 100)
-                      : 0);
+                {data.rows.map((r, index) => {
+                  const expected = expectedCents(r);
                   return (
                     <tr key={r.key}>
                       <td>{r.name}</td>
                       <td>{money(expected)}</td>
                       <td>
-                        <input
-                          aria-label={`Contado en ${r.name}`}
-                          type="number"
-                          min="0"
-                          max="10000000"
-                          step="0.01"
-                          required
-                          value={counts[r.key] ?? ""}
-                          onChange={(e) =>
-                            setCounts((c) => ({
-                              ...c,
-                              [r.key]: e.target.value,
-                            }))
-                          }
-                        />
+                        <Field label={`Contado en ${r.name}`}>
+                          <input
+                            name={`counts.${index}.counted_cents`}
+                            type="number"
+                            min="0"
+                            max="10000000"
+                            step="0.01"
+                            required
+                            value={counts[r.key] ?? ""}
+                            onChange={(e) =>
+                              setCounts((c) => ({
+                                ...c,
+                                [r.key]: e.target.value,
+                              }))
+                            }
+                          />
+                        </Field>
                       </td>
                       <td>
                         {counts[r.key] !== undefined && counts[r.key] !== ""
@@ -1338,23 +1377,16 @@ export function CashCount({
           </div>
           <Field label="Observaciones / explicación de diferencias">
             <input
+              name="reason"
               value={reason}
               maxLength={180}
               onChange={(e) => setReason(e.target.value)}
             />
           </Field>
-          <button
-            className="primary"
-            disabled={
-              busy ||
-              data.rows.some(
-                (r) => counts[r.key] === undefined || counts[r.key] === "",
-              )
-            }
-          >
+          <button className="primary" disabled={busy}>
             Guardar arqueo
           </button>
-        </form>
+        </Form>
       )}
       <p className="fine-print">
         El saldo inicial se suma a la fila Efectivo. Si creaste otros medios de

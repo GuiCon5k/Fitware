@@ -1,3 +1,15 @@
+export type FieldErrors = Record<string, string>;
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly fields: FieldErrors = {},
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 let gymId = "";
 export const setGym = (id: string) => {
   gymId = id;
@@ -51,7 +63,15 @@ export async function api<T = unknown>(
       .catch(() => ({ error: "No se pudo conectar con el servidor" }));
     if (res.status === 401 && !path.startsWith("/auth/"))
       window.dispatchEvent(new Event("session-expired"));
-    throw new Error(data.error || "No se pudo completar la operación");
+    const fields = Object.fromEntries(
+      Object.entries(data.fields || {}).filter(
+        ([, detail]) => typeof detail === "string",
+      ),
+    ) as FieldErrors;
+    throw new ApiError(
+      data.error || "No se pudo completar la operación",
+      fields,
+    );
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }

@@ -1,12 +1,7 @@
+import { Form, matchPasswords } from "./form-guidance";
 import { MemberAccessTools } from "./gym-tools";
 import { PasswordInput } from "./password-input";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type FormEvent,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Search,
   X,
@@ -28,9 +23,9 @@ export function Dialog({
   busy?: boolean;
   children: ReactNode;
 }) {
-  const ref = useRef<HTMLElement>(null),
-    closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  const ref = useRef<HTMLElement>(null);
+  const dialogActions = useRef({ onClose, busy });
+  dialogActions.current = { onClose, busy };
   useEffect(() => {
     const prev = document.activeElement as HTMLElement;
     const get = () =>
@@ -41,7 +36,8 @@ export function Dialog({
       );
     get()[0]?.focus();
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) closeRef.current();
+      if (e.key === "Escape" && !dialogActions.current.busy)
+        dialogActions.current.onClose();
       if (e.key === "Tab") {
         const nodes = get();
         if (e.shiftKey && document.activeElement === nodes[0]) {
@@ -58,7 +54,7 @@ export function Dialog({
       document.removeEventListener("keydown", key);
       prev?.focus();
     };
-  }, [busy]);
+  }, []);
   return (
     <div
       className="modal-backdrop"
@@ -406,6 +402,7 @@ export function ImportMembers({
   onSaved: (message: string) => Promise<void>;
 }) {
   const [preview, setPreview] = useState<Preview | null>(null),
+    [fileError, setFileError] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [result, setResult] = useState<{
@@ -414,10 +411,15 @@ export function ImportMembers({
     } | null>(null);
   async function upload(file: File) {
     setError("");
+    setFileError("");
     setPreview(null);
     setResult(null);
+    if (!/\.(xlsx|csv)$/i.test(file.name)) {
+      setFileError("Elegí un archivo XLSX o CSV.");
+      return;
+    }
     if (file.size > 2 * 1024 * 1024) {
-      setError("El archivo supera los 2 MB.");
+      setFileError("El archivo supera los 2 MB.");
       return;
     }
     setBusy(true);
@@ -433,7 +435,7 @@ export function ImportMembers({
       });
       setPreview(data);
     } catch (e) {
-      setError((e as Error).message);
+      setFileError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -475,7 +477,7 @@ export function ImportMembers({
         <Download size={16} />
         Descargar plantilla
       </button>
-      <Field label="Archivo de socios">
+      <Field label="Archivo de socios" error={fileError}>
         <input
           type="file"
           accept=".xlsx,.csv"
@@ -483,6 +485,7 @@ export function ImportMembers({
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) void upload(f);
+            else setFileError("");
           }}
         />
       </Field>
@@ -577,16 +580,13 @@ export function Settings({
   useEffect(() => {
     void reload().catch((e) => setError(e.message));
   }, []);
-  async function save(e: FormEvent) {
-    e.preventDefault();
+  async function save() {
     setBusy(true);
     setError("");
     setNotice("");
     try {
       await onModules(draft);
       setNotice("Configuración guardada");
-    } catch (e) {
-      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -598,7 +598,7 @@ export function Settings({
           title="Funciones de tu gimnasio"
           subtitle="Activá lo que necesitás. Los datos históricos se conservan al desactivar una función."
         />
-        <form onSubmit={save}>
+        <Form onSubmit={save}>
           {(
             [
               ["products", "Consumibles y control de stock"],
@@ -606,22 +606,22 @@ export function Settings({
               ["multi_gym", "Múltiples gimnasios"],
             ] as const
           ).map(([key, label]) => (
-            <label className="checkbox module-option" key={key}>
+            <Field label={label} checkbox className="module-option" key={key}>
               <input
                 type="checkbox"
+                name={key}
                 checked={draft[key]}
                 onChange={(e) =>
                   setDraft({ ...draft, [key]: e.target.checked })
                 }
               />
-              {label}
-            </label>
+            </Field>
           ))}
           <button className="primary" disabled={busy}>
             <SettingsIcon size={16} />
             {busy ? "Guardando…" : "Guardar configuración"}
           </button>
-        </form>
+        </Form>
       </section>
       <div className="settings-grid">
         {[
@@ -739,8 +739,7 @@ export function VoidDialog({
   onSaved: (message: string) => Promise<void>;
 }) {
   const [reason, setReason] = useState(""),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [busy, setBusy] = useState(false);
   return (
     <Dialog title="Anular movimiento" onClose={onClose} busy={busy}>
       <p>
@@ -755,11 +754,9 @@ export function VoidDialog({
         Esta acción corrige el registro de FITWare. La devolución del dinero se
         gestiona por separado con el socio.
       </p>
-      <form
-        onSubmit={async (e) => {
-          e.preventDefault();
+      <Form
+        onSubmit={async () => {
           setBusy(true);
-          setError("");
           try {
             await api(
               "/movements/" + movement.kind + "/" + movement.id + "/void",
@@ -767,8 +764,6 @@ export function VoidDialog({
             );
             await onSaved("Movimiento anulado; historial conservado");
             onClose();
-          } catch (e) {
-            setError((e as Error).message);
           } finally {
             setBusy(false);
           }
@@ -776,6 +771,7 @@ export function VoidDialog({
       >
         <Field label="Motivo de la anulación">
           <textarea
+            name="reason"
             value={reason}
             required
             minLength={5}
@@ -783,11 +779,6 @@ export function VoidDialog({
             onChange={(e) => setReason(e.target.value)}
           />
         </Field>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
         <div className="form-actions">
           <button
             className="secondary"
@@ -797,14 +788,11 @@ export function VoidDialog({
           >
             Cancelar
           </button>
-          <button
-            className="primary"
-            disabled={busy || reason.trim().length < 5}
-          >
+          <button className="primary" disabled={busy}>
             {busy ? "Anulando…" : "Confirmar anulación"}
           </button>
         </div>
-      </form>
+      </Form>
     </Dialog>
   );
 }
@@ -816,23 +804,23 @@ export function Recovery({
   onBack: () => void;
 }) {
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [done, setDone] = useState(false);
   return (
     <main className="recovery-page">
       <section className="panel">
         <h1>{token ? "Elegí una nueva contraseña" : "Recuperar acceso"}</h1>
-        <form
-          onSubmit={async (e: FormEvent<HTMLFormElement>) => {
-            e.preventDefault();
-            const data = Object.fromEntries(new FormData(e.currentTarget));
+        <Form
+          validate={
+            token
+              ? (form) => matchPasswords(form, "password", "confirm")
+              : undefined
+          }
+          onSubmit={async (form) => {
+            const data = Object.fromEntries(new FormData(form));
             setBusy(true);
-            setError("");
             try {
               if (token) {
-                if (data.password !== data.confirm)
-                  throw new Error("Las contraseñas no coinciden");
                 await api("/auth/reset-password", {
                   method: "POST",
                   body: JSON.stringify({ token, password: data.password }),
@@ -860,8 +848,6 @@ export function Recovery({
                     : "Si el email está registrado, recibirás un enlace válido por 30 minutos. Revisá también spam.",
                 );
               }
-            } catch (e) {
-              setError((e as Error).message);
             } finally {
               setBusy(false);
             }
@@ -899,11 +885,6 @@ export function Recovery({
                 />
               </Field>
             ))}
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
           {notice && (
             <p className="flow-hint" role="status">
               {notice}
@@ -918,7 +899,7 @@ export function Recovery({
                   : "Enviar enlace"}
             </button>
           )}
-        </form>
+        </Form>
         <button className="auth-switch" disabled={busy} onClick={onBack}>
           Volver a ingresar
         </button>

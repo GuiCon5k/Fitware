@@ -45,36 +45,19 @@ Base de prueba de Render: su vencimiento informado fue el 5 de diciembre de 2026
 
 En la revisión de dependencias se actualizaron Express/body-parser para corregir una alerta alta. Quedaron documentadas alertas moderadas transitivas de uuid/ExcelJS; la versión revisada de ExcelJS usaba v4, mientras el aviso referido afectaba otras funciones. Volver a revisar versiones/avisos vigentes; no aplicar `npm audit fix --force` a ciegas.
 
-## Pedido pendiente actual: validaciones y etiquetas flotantes
+## Validaciones personalizadas y etiquetas flotantes
 
-Pedido del usuario: mejorar los mensajes de validación en todos los formularios, evitar los globos de validación nativa del navegador y mostrar mensajes propios dentro de la interfaz. Los títulos como Nombre y Email deben verse dentro del campo vacío y subir suavemente al enfocarlo; deben permanecer arriba si el campo tiene contenido.
+Implementadas sobre la base del commit `352db89`.
 
-Estado: se inspeccionó el código y se explicó el enfoque. **No está implementado todavía.** El usuario pidió preparar esta transferencia antes de continuar; no presentar esta tarea como terminada.
+- `Form` en `apps/web/src/form-guidance.tsx` lee las restricciones de los controles al enviar sin abrir los globos del navegador. Muestra los errores junto a cada campo, resume cuando hay varios y enfoca el primero. Conserva los datos ingresados, retira los errores al editar y descarta los de campos que salieron del formulario.
+- `api.ts` conserva el mapa `fields` de Express. Los formularios ubican esos mensajes junto al control correspondiente y muestran un aviso general para los errores sin campo.
+- `Field` y `PasswordInput` comparten etiquetas accesibles. En campos de texto, numéricos y de varias líneas, la etiqueta sube al enfocar y queda arriba mientras haya contenido. Las fechas, selectores y archivos conservan la etiqueta encima para dejar espacio a los controles del navegador. Se respeta la reducción de movimiento.
+- Se aplicó a ingreso, registro, recuperación, editores, configuración, anulación, medios de pago, acreditaciones, recepción y arqueo. Importación y fotos muestran el error junto al selector de archivo. Los importes, permisos y reglas de confirmación siguen bajo validación de la API.
 
-Archivos relevantes:
+La compilación pasó. Se ejecutaron 52 pruebas de API y 20 de interfaz. En Windows, la prueba del comando de restauración usó un adaptador local para ejecutar el CLI de npm. En Chrome se revisaron el inicio de sesión y el editor de socios a 1440 y 390 píxeles con datos ficticios, incluidos el foco en errores y la reducción de movimiento.
 
-- `apps/web/src/form-guidance.ts`: hoy escucha `invalid` en document, modifica `setCustomValidity` y `aria-invalid`; todavía utiliza la validación nativa. Se llama desde App.
-- `apps/web/src/components.tsx`: `Field` es actualmente un label con un span arriba y children.
-- `apps/web/src/password-input.tsx`: campo de contraseña con label separado, botón mostrar/ocultar e indicación opcional.
-- `apps/web/src/api.ts`: lanza Error con el texto del backend; actualmente descarta el mapa `fields` de las respuestas de validación.
-- `apps/web/src/app.tsx`: login/registro y montaje principal; Auth también se usa directamente en pruebas.
-- `apps/web/src/editor.tsx`: formularios de socios, planes, pagos, productos, reposiciones, ventas, promociones, empleados, sede, egresos y perfil.
-- `apps/web/src/workspace-tools.tsx`: recuperación, importación, configuración y anulación.
-- `apps/web/src/gym-tools.tsx`: medios de pago, acreditaciones, fotos, recepción y arqueo.
-- `apps/web/src/styles.css` y pruebas en `apps/web/test`.
+## Cómo retomar
 
-Criterios de aceptación propuestos a partir del pedido:
-
-1. Evitar validación emergente nativa al enviar, conservando las restricciones reales y la validación del backend.
-2. Mostrar errores específicos en español junto al campo; resumen útil si hay varios y foco en el primer error. No enviar operaciones inválidas ni borrar lo ingresado.
-3. Corregir o retirar el error al editar/revalidar; evitar errores de campos ocultos o formularios desmontados.
-4. Etiquetas flotantes suaves con campos vacíos, enfocados, completos, precargados y autocompletados; respetar reducción de movimiento. Mantener labels accesibles, teclado y vínculos entre error/campo.
-5. Cubrir texto, email, contraseña, textarea, números, fechas, select y cargas de archivo con el tratamiento adecuado; no superponer labels con controles nativos ni el botón de mostrar contraseña.
-6. Verificar registro y recuperación, comparaciones de contraseñas, formularios operativos y errores devueltos por la API. Añadir pruebas de regresión relevantes y comprobar escritorio/móvil visualmente cuando el entorno lo permita.
-7. Compilar, ejecutar pruebas, publicar solo con autorización vigente y confirmar la versión servida. Actualizar este estado al completar la tarea.
-
-## Cómo iniciar la próxima sesión
-
-Abrir/clonar este repositorio en el entorno de Codex elegido. Pedir: «Leé AGENTS.md y docs/CONTINUITY.md. Continuá el pedido pendiente de validaciones personalizadas y etiquetas flotantes suaves. Verificá el estado remoto antes de editar y conservá las reglas de cobros y permisos».
+Revisar la rama remota y los cambios locales antes de publicar. Con autorización vigente, verificar la versión y el commit servido por `/api/health` después de la publicación.
 
 El contexto está disponible en el repositorio; no se creó automáticamente una sesión de trabajo en otra aplicación ni se transfirieron accesos de GitHub, Render o Notion. Esas conexiones dependen del entorno de destino.

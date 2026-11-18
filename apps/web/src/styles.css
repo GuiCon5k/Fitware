@@ -794,10 +794,85 @@ footer span:last-child {
   gap: 8px;
   margin-bottom: 18px;
 }
-.field > span {
-  font-size: 11px;
+.field-label {
+  font-size: 12px;
   font-weight: 600;
-  color: #60725d;
+  color: #53664e;
+}
+.field-control {
+  position: relative;
+  min-width: 0;
+}
+.field-control
+  > :is(input, textarea):not([type="checkbox"]):not([type="radio"]):has(
+    + .field-label
+  ) {
+  padding-top: 23px;
+  padding-bottom: 8px;
+}
+.field-control > :is(input, textarea) + .field-label {
+  position: absolute;
+  inset-inline-start: 12px;
+  top: 10px;
+  max-width: calc(100% - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform-origin: left top;
+  transform: translateY(-5px) scale(0.88);
+  transition: transform 170ms ease;
+}
+.field-control
+  > :is(input, textarea):placeholder-shown:not(:focus):not(
+    [aria-invalid="true"]
+  )
+  + .field-label {
+  transform: translateY(7px);
+}
+.field-control
+  > :is(input, textarea):not(:focus):has(+ .field-label)::placeholder {
+  color: transparent;
+}
+.field-control > input:autofill + .field-label {
+  transform: translateY(-5px) scale(0.88);
+}
+.field-control > input:-webkit-autofill + .field-label {
+  transform: translateY(-5px) scale(0.88);
+}
+.field-checkbox > .field-control {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.field-checkbox.module-option {
+  margin-bottom: 0;
+}
+.field-checkbox input {
+  width: auto;
+  accent-color: #386446;
+}
+.field-checkbox > .field-control > .field-label {
+  position: static;
+  transform: none;
+  white-space: normal;
+}
+.field-error {
+  display: block;
+  color: #a23a28;
+  font-size: 12px;
+  line-height: 1.45;
+}
+:is(input, select, textarea, fieldset)[aria-invalid="true"],
+.password-control:has(input[aria-invalid="true"]) {
+  border-color: #b64d39;
+}
+.toolbar > .form-feedback {
+  flex: 0 0 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .field-control > :is(input, textarea) + .field-label {
+    transition: none;
+  }
 }
 input,
 select,
@@ -2030,9 +2105,8 @@ button.avatar {
   margin: 0 5px;
   color: #4c6756;
 }
-.field > label {
-  font-size: 13px;
-  font-weight: 500;
+.password-control .field-label {
+  max-width: calc(100% - 64px);
 }
 /* Reception, reconciliation and daily counts. */
 .tools-panel {
@@ -2056,9 +2130,10 @@ button.avatar {
   min-width: 180px;
   flex: 1;
 }
-.tools-panel table input {
+.tools-panel td .field {
   min-width: 130px;
   max-width: 220px;
+  margin-bottom: 0;
 }
 .tools-list {
   display: grid;

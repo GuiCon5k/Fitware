@@ -1,4 +1,5 @@
-import type React from "react";
+import { cloneElement, useId, type ReactElement, type ReactNode } from "react";
+import { useFieldFeedback } from "./form-guidance";
 import { Dumbbell, ChevronRight, CreditCard } from "lucide-react";
 import { money, shortDate } from "./api";
 import type { Payment } from "./types";
@@ -23,15 +24,95 @@ export function Logo() {
 export function Field({
   label,
   children,
+  hint,
+  error,
+  action,
+  checkbox = false,
+  className,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactElement<{
+    id?: string;
+    type?: string;
+    placeholder?: string;
+    "aria-describedby"?: string;
+    "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling";
+    "data-validation-field"?: string;
+  }>;
+  hint?: string;
+  error?: string;
+  action?: ReactNode;
+  checkbox?: boolean;
+  className?: string;
 }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
+  const generatedId = useId();
+  const id = children.props.id || generatedId;
+  const feedback = useFieldFeedback(id);
+  const message = error || feedback.message;
+  const describedBy =
+    [
+      children.props["aria-describedby"],
+      hint && id + "-hint",
+      message && id + "-error",
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
+  const floating =
+    children.type === "textarea" ||
+    (children.type === "input" &&
+      ![
+        "date",
+        "datetime-local",
+        "time",
+        "month",
+        "week",
+        "file",
+        "checkbox",
+        "radio",
+        "color",
+        "range",
+      ].includes(children.props.type || "text"));
+  const control = cloneElement(children, {
+    id,
+    "data-validation-field": "",
+    "aria-describedby": describedBy,
+    "aria-invalid": message ? true : children.props["aria-invalid"],
+    ...(floating ? { placeholder: children.props.placeholder || " " } : {}),
+  });
+  const caption = (
+    <label className="field-label" htmlFor={id}>
+      {label}
     </label>
+  );
+  return (
+    <div
+      className={["field", checkbox && "field-checkbox", className]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {!floating && !checkbox && caption}
+      <div
+        className={action ? "field-control password-control" : "field-control"}
+      >
+        {control}
+        {(floating || checkbox) && caption}
+        {action}
+      </div>
+      {hint && (
+        <small id={id + "-hint"} className="muted">
+          {hint}
+        </small>
+      )}
+      {message && (
+        <small
+          className="field-error"
+          id={id + "-error"}
+          role={error || feedback.announce ? "alert" : undefined}
+        >
+          {message}
+        </small>
+      )}
+    </div>
   );
 }
 export function Stat({
@@ -43,7 +124,7 @@ export function Stat({
   title: string;
   value: string;
   detail: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
     <section className="stat">
@@ -87,7 +168,7 @@ export function Empty({
   title,
   text,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   text: string;
 }) {
@@ -181,23 +262,36 @@ export function PaymentTable({
 }
 export function Choices({
   label,
+  name,
   items,
   value,
   onChange,
 }: {
   label: string;
+  name?: string;
   items: { id: string; name: string }[];
   value: string[];
   onChange: (v: string[]) => void;
 }) {
+  const id = useId();
+  const { message, announce } = useFieldFeedback(id);
   return (
-    <fieldset className="choices">
+    <fieldset
+      className="choices"
+      id={id}
+      name={name}
+      tabIndex={-1}
+      data-validation-field
+      aria-invalid={message ? true : undefined}
+      aria-describedby={message ? id + "-error" : undefined}
+    >
       <legend>{label}</legend>
       {items.length ? (
         items.map((item) => (
           <label className="checkbox" key={item.id}>
             <input
               type="checkbox"
+              value={item.id}
               checked={value.includes(item.id)}
               onChange={(e) =>
                 onChange(
@@ -212,6 +306,15 @@ export function Choices({
         ))
       ) : (
         <p className="muted">No hay opciones disponibles.</p>
+      )}
+      {message && (
+        <small
+          className="field-error"
+          id={id + "-error"}
+          role={announce ? "alert" : undefined}
+        >
+          {message}
+        </small>
       )}
     </fieldset>
   );

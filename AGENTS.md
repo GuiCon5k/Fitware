@@ -12,6 +12,6 @@ Antes de modificar el proyecto, leer `docs/CONTINUITY.md` y las secciones pertin
 - Informar qué se cambió, qué se comprobó y qué quedó pendiente; distinguir pruebas automatizadas de revisión visual o hardware real.
 - Si Notion está conectado, consultar el contexto privado de FITWare y las instrucciones personales vigentes del usuario. No copiar documentación privada completa al repositorio público. Si no está conectado, continuar con el contexto del repositorio e informar la limitación.
 
-## Tarea pendiente inmediata
+## Validación de formularios
 
-Implementar los mensajes de validación dentro de la interfaz y las etiquetas flotantes animadas solicitadas por el usuario. El alcance y estado exactos están en `docs/CONTINUITY.md`. La tarea se relevó, pero todavía no se modificó su implementación.
+Usar `Form` y `Field` para mostrar los errores y conservar las etiquetas accesibles. Consultar `docs/CONTINUITY.md` para conocer el estado de verificación y publicación.

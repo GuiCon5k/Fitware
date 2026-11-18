@@ -6,14 +6,8 @@ import {
   MethodSettings,
 } from "./gym-tools";
 import { PasswordInput } from "./password-input";
-import { useFormGuidance } from "./form-guidance";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { Form, matchPasswords } from "./form-guidance";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
   ArrowDownLeft,
@@ -112,7 +106,6 @@ const roleNames = {
   trainer: "Entrenador",
 };
 export function App() {
-  useFormGuidance();
   const [user, setUser] = useState<User | null>(null),
     [checking, setChecking] = useState(true),
     [page, setPage] = useState<Page>("dashboard"),
@@ -1480,21 +1473,11 @@ export function Auth({
   const [register, setRegister] = useState(false),
     [error, setError] = useState(initialError),
     [busy, setBusy] = useState(false);
-  async function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function submit(form: HTMLFormElement) {
     setBusy(true);
     setError("");
     try {
-      const data = Object.fromEntries(new FormData(e.currentTarget));
-      if (register && data.password !== data.confirm_password) {
-        setError(
-          "Las contraseñas no coinciden. Escribí la misma contraseña en ambos campos.",
-        );
-        e.currentTarget
-          .querySelector<HTMLInputElement>('[name="confirm_password"]')
-          ?.focus();
-        return;
-      }
+      const data = Object.fromEntries(new FormData(form));
       for (const key of ["name", "business_name", "gym_name", "email"])
         if (typeof data[key] === "string")
           data[key] = (data[key] as string).trim();
@@ -1504,8 +1487,6 @@ export function Auth({
           body: JSON.stringify(data),
         }),
       );
-    } catch (e) {
-      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -1544,7 +1525,13 @@ export function Auth({
             ? "Creá tu cuenta de dueño y tu primer gimnasio."
             : "Ingresá con tu cuenta para continuar."}
         </p>
-        <form
+        <Form
+          feedbackScope={register}
+          validate={
+            register
+              ? (form) => matchPasswords(form, "password", "confirm_password")
+              : undefined
+          }
           onSubmit={submit}
           onChange={() => {
             if (error) setError("");
@@ -1604,14 +1591,19 @@ export function Auth({
             {busy ? "Procesando…" : register ? "Crear cuenta" : "Ingresar"}
             <ChevronRight size={16} />
           </button>
-        </form>
+        </Form>
         {!register && (
-          <button className="auth-switch" onClick={() => setForgot(true)}>
+          <button
+            className="auth-switch"
+            disabled={busy}
+            onClick={() => setForgot(true)}
+          >
             Olvidé mi contraseña
           </button>
         )}
         <button
           className="auth-switch"
+          disabled={busy}
           onClick={() => {
             setRegister(!register);
             setError("");

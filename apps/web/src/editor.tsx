@@ -1,14 +1,9 @@
 import { MethodFields } from "./gym-tools";
 import { PasswordInput } from "./password-input";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { X, ShieldCheck } from "lucide-react";
-import { api, money, shortDate } from "./api";
+import { api, money, shortDate, type FieldErrors } from "./api";
+import { Form, matchPasswords } from "./form-guidance";
 import { Choices, Field } from "./components";
 import type {
   User,
@@ -158,12 +153,14 @@ export function EditorModal({
     ...(editor.kind === "profile" ? user : {}),
   }));
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
+    [quoteError, setQuoteError] = useState<Error | null>(null),
     [quote, setQuote] = useState<Quote | null>(null),
     [quoteBusy, setQuoteBusy] = useState(false);
   const [requestKey] = useState(() => crypto.randomUUID());
   const [quoteRevision, setQuoteRevision] = useState(0);
   const ref = useRef<HTMLElement>(null);
+  const dialogActions = useRef({ onClose, busy });
+  dialogActions.current = { onClose, busy };
   const canDiscount =
     modules.promotions &&
     (user.role === "owner" || user.permissions.includes("promos.manage"));
@@ -201,7 +198,6 @@ export function EditorModal({
         next.partner_id = "";
       return next;
     });
-    setError("");
   };
   useEffect(() => {
     const prev = document.activeElement as HTMLElement;
@@ -212,7 +208,8 @@ export function EditorModal({
       Array.from(dialog?.querySelectorAll<HTMLElement>(selectors) || []);
     nodes()[0]?.focus();
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) onClose();
+      if (e.key === "Escape" && !dialogActions.current.busy)
+        dialogActions.current.onClose();
       if (e.key === "Tab") {
         const list = nodes();
         if (e.shiftKey && document.activeElement === list[0]) {
@@ -229,7 +226,7 @@ export function EditorModal({
       document.removeEventListener("keydown", key);
       prev?.focus();
     };
-  }, [busy, onClose]);
+  }, []);
   const paymentBody = () => ({
     member_id: b.member_id,
     plan_ids: b.plan_ids,
@@ -241,7 +238,8 @@ export function EditorModal({
     ...(b.partner_id ? { partner_id: b.partner_id } : {}),
     request_key: requestKey,
   });
-  const firstPayment = editor.kind === "member" && !item.id && b.charge_now;
+  const firstPayment =
+    editor.kind === "member" && !item.id && Boolean(b.charge_now);
   const memberBody = () => ({ ...b, plan_ids: b.plan_ids || [] });
   const confirmedQuote = () => ({
     expected_total_cents: quote!.total_cents,
@@ -259,20 +257,21 @@ export function EditorModal({
     payment: paymentBody(),
     request_key: requestKey,
   });
+  const quotesPayment = editor.kind === "payment" || firstPayment;
+  const selectedPromotion = promotions.find((p) => p.id === b.promotion_id);
+  const canQuote =
+    quotesPayment &&
+    b.plan_ids.length > 0 &&
+    (firstPayment
+      ? Boolean(b.name?.trim()) && /^[0-9]{6,12}$/.test(b.document || "")
+      : Boolean(b.member_id)) &&
+    (selectedPromotion?.kind !== "two_for_one" || Boolean(b.partner_id));
   useEffect(() => {
-    if (editor.kind !== "payment" && !firstPayment) return;
     let ignore = false;
     setQuote(null);
+    setQuoteError(null);
     setQuoteBusy(false);
-    const selected = promotions.find((p) => p.id === b.promotion_id);
-    if (
-      (!firstPayment && !b.member_id) ||
-      (firstPayment &&
-        (!b.name?.trim() || !/^[0-9]{6,12}$/.test(b.document || ""))) ||
-      !b.plan_ids.length ||
-      (selected?.kind === "two_for_one" && !b.partner_id)
-    )
-      return;
+    if (!canQuote) return;
     setQuoteBusy(true);
     const timer = setTimeout(() => {
       api<Quote>(
@@ -287,11 +286,11 @@ export function EditorModal({
         .then((q) => {
           if (!ignore) {
             setQuote(q);
-            setError("");
+            setQuoteError(null);
           }
         })
         .catch((e) => {
-          if (!ignore) setError(e.message);
+          if (!ignore) setQuoteError(e);
         })
         .finally(() => {
           if (!ignore) setQuoteBusy(false);
@@ -304,6 +303,7 @@ export function EditorModal({
   }, [
     quoteRevision,
     firstPayment,
+    canQuote,
     b.name,
     b.document,
     b.email,
@@ -321,6 +321,13 @@ export function EditorModal({
     b.promotion_id,
     b.partner_id,
   ]);
+  const apiNames: Record<string, string> = {
+    price: "price_cents",
+    cost: "cost_cents",
+    unit_cost: "unit_cost_cents",
+    amount: "amount_cents",
+    discount: "discount_cents",
+  };
   const input = (label: string, key: string, type = "text", extra: any = {}) =>
     type === "password" ? (
       <PasswordInput
@@ -334,7 +341,7 @@ export function EditorModal({
     ) : (
       <Field label={label}>
         <input
-          name={key}
+          name={apiNames[key] || key}
           type={type}
           value={b[key] ?? ""}
           onChange={(e) => update(key, e.target.value)}
@@ -371,6 +378,7 @@ export function EditorModal({
   ) => (
     <Choices
       label={label}
+      name={key}
       items={items}
       value={b[key] || []}
       onChange={(v) => update(key, v)}
@@ -380,6 +388,7 @@ export function EditorModal({
     <label className="checkbox">
       <input
         type="checkbox"
+        name={key}
         checked={!!b[key]}
         onChange={(e) => update(key, e.target.checked)}
       />
@@ -387,11 +396,47 @@ export function EditorModal({
     </label>
   );
   const methods = <MethodFields value={b} onChange={update} />;
-  async function save(e: FormEvent) {
-    e.preventDefault();
+  function validate(form: HTMLFormElement): FieldErrors {
+    if (editor.kind === "password")
+      return matchPasswords(form, "new_password", "confirm_password");
+
+    const errors: FieldErrors = {};
+    const needsCombo =
+      editor.kind === "payment"
+        ? selectedPromotion?.kind === "combo"
+        : editor.kind === "promotion" &&
+          b.kind === "combo" &&
+          (!b.general_offer || b.plan_ids.length > 0);
+    if (needsCombo) {
+      const activities = new Set(
+        plans.filter((p) => b.plan_ids.includes(p.id)).map((p) => p.activity),
+      );
+      if (activities.size < 2 || activities.size !== b.plan_ids.length)
+        errors.plan_ids =
+          "Elegí al menos dos actividades distintas y un solo plan por actividad.";
+    } else if (
+      (editor.kind === "payment" || firstPayment) &&
+      !b.plan_ids.length
+    ) {
+      errors.plan_ids = "Elegí al menos una actividad.";
+    }
+    if (
+      editor.kind === "promotion" &&
+      b.starts_on &&
+      b.ends_on &&
+      b.ends_on < b.starts_on
+    )
+      errors.ends_on =
+        "La fecha de fin debe ser igual o posterior a la fecha de inicio.";
+    if (editor.kind === "staff" && !b.gym_ids.length)
+      errors.gym_ids = "Seleccioná al menos un gimnasio.";
+    return errors;
+  }
+
+  async function save() {
     if (busy) return;
+    if (quotesPayment && quoteError) throw quoteError;
     setBusy(true);
-    setError("");
     try {
       let path = "",
         method = "POST",
@@ -425,8 +470,8 @@ export function EditorModal({
           };
           break;
         case "payment":
-          if (!quote)
-            throw new Error("Revisá los datos para calcular el cobro");
+          if (!quote || quoteBusy)
+            throw new Error("Revisá los datos y esperá el cálculo del cobro");
           path = b.pending ? "/pending-payments" : "/payments";
           body = { ...paymentBody(), ...confirmedQuote() };
           break;
@@ -511,8 +556,6 @@ export function EditorModal({
           break;
         case "password":
           path = "/profile/password";
-          if (b.new_password !== b.confirm_password)
-            throw new Error("Las contraseñas no coinciden");
           break;
       }
       const result = await api<{ id?: string }>(path, {
@@ -533,8 +576,6 @@ export function EditorModal({
       onClose();
       if (editor.kind === "member" && !item.id && result.id)
         onCreated?.(result.id);
-    } catch (e) {
-      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -638,6 +679,7 @@ export function EditorModal({
           )}
           <Field label="Observaciones">
             <textarea
+              name="notes"
               value={b.notes || ""}
               onChange={(e) => update("notes", e.target.value)}
               maxLength={2000}
@@ -1070,6 +1112,7 @@ export function EditorModal({
           </div>
           <Field label="Rol">
             <select
+              name="role"
               value={b.role}
               onChange={(e) =>
                 setB((p: any) => ({
@@ -1208,7 +1251,24 @@ export function EditorModal({
             <X />
           </button>
         </div>
-        <form onSubmit={save}>
+        <Form
+          onSubmit={save}
+          validate={validate}
+          mapField={(path) => {
+            const name = path
+              .replace(/^(member|payment)\./, "")
+              .replace(/^method_detail$/, "method");
+            if (!/^plan_ids(?:\.\d+)?$/.test(name)) return name;
+            if (
+              editor.kind === "payment" &&
+              selectedPromotion?.kind === "two_for_one"
+            )
+              return "activity";
+            if (editor.kind === "promotion" && b.kind === "two_for_one")
+              return "promotion_activity";
+            return name;
+          }}
+        >
           {item.warnings?.length > 0 && (
             <div className="flow-hint" role="status">
               {item.warnings.map((w: string) => (
@@ -1217,10 +1277,10 @@ export function EditorModal({
             </div>
           )}
           {fields}
-          {error && (
-            <div role="alert" className="error">
-              {error}
-            </div>
+          {quoteError && (
+            <p className="error" role="status">
+              {quoteError.message}
+            </p>
           )}
           <div className="form-actions">
             <button
@@ -1235,8 +1295,8 @@ export function EditorModal({
               className="primary"
               disabled={
                 busy ||
-                ((editor.kind === "payment" || firstPayment) &&
-                  (!quote || quoteBusy))
+                (quotesPayment &&
+                  (quoteBusy || (canQuote && !quote && !quoteError)))
               }
             >
               <ShieldCheck size={16} />
@@ -1253,7 +1313,7 @@ export function EditorModal({
                       : "Guardar"}
             </button>
           </div>
-        </form>
+        </Form>
       </section>
     </div>
   );
